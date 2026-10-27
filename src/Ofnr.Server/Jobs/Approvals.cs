@@ -17,7 +17,7 @@ public sealed class Approvals(OfnrDb db, IOpsNotifier notifier)
             RunId = runId,
             Kind = "question",
             Title = question.Trim(),
-            Detail = string.Join("\n", (options ?? []).Select((o, i) => $"{i + 1}. {o.Trim()}")),
+            Detail = string.Join("\n", (options ?? []).Where(o => !string.IsNullOrWhiteSpace(o)).Select((o, i) => $"{i + 1}. {o.Trim()}")),
         };
         db.Approvals.Add(a);
         await db.SaveChangesAsync();

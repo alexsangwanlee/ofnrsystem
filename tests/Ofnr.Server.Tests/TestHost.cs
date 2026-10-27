@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Ofnr.Server.Data;
+using Ofnr.Server.Realtime;
 using Ofnr.Server.Security;
 
 namespace Ofnr.Server.Tests;
@@ -74,4 +75,18 @@ public sealed class TestDb : IDisposable
         using var cmd = new NpgsqlCommand($"DROP DATABASE IF EXISTS \"{dbName}\" WITH (FORCE)", conn);
         cmd.ExecuteNonQuery();
     }
+}
+
+public sealed class RecordingNotifier : IOpsNotifier
+{
+    readonly List<object> calls = [];
+    public List<object> Calls { get { lock (calls) return [.. calls]; } }
+    public Task JobUpdated(JobDto job) => Add(job);
+    public Task JobEvent(JobEventDto e) => Add(e);
+    public Task ApprovalRequested(ApprovalDto approval) => Add(("requested", approval));
+    public Task ApprovalResolved(ApprovalDto approval) => Add(("resolved", approval));
+    public Task MailUpdated(MailSummaryDto mail) => Add(mail);
+    public Task ProjectUpdated(ProjectDto project) => Add(project);
+    public Task Notify(string title, string body, string? link) => Add((title, body, link));
+    Task Add(object call) { lock (calls) calls.Add(call); return Task.CompletedTask; }
 }

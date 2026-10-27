@@ -8,6 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using Ofnr.Server.Data;
+using Ofnr.Server.Jobs;
 using Ofnr.Server.Mcp;
 
 namespace Ofnr.Server.Tests;
@@ -48,7 +49,7 @@ public sealed class McpToolsTests(TestHost host) : IClassFixture<TestHost>
         return new(job.Id, run.Id, project.Id, project.JobNo, mail?.Id);
     }
 
-    static MailMessage Mail(string n, long uid, string threadKey, Project project, string body) => new()
+    static MailMessage Mail(string n, long uid, string threadKey, Project? project, string body) => new()
     {
         Folder = "INBOX", UidValidity = 1, Uid = uid + (long)Random.Shared.Next(1000, int.MaxValue), ThreadKey = threadKey, Project = project,
         FromName = "김담당", FromAddress = "kim@tnf.co.kr", Subject = "견적 요청", TextBody = body, ReceivedAt = DateTimeOffset.UtcNow.AddMinutes(uid),
@@ -172,6 +173,67 @@ public sealed class McpToolsTests(TestHost host) : IClassFixture<TestHost>
     }
 
     [Fact]
+    public async Task Get_mail_thread_keeps_unlinked_replies_and_drops_subject_matches_from_others()
+    {
+        var s = await Seed();
+        var n = s.JobNo[2..];
+        Guid subjectJobId;
+        using (var scope = host.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<OfnrDb>();
+            var thread = "<root-" + n + "@tnf.co.kr>";
+            // OFNR's own reply: same Message-ID thread, but MatchProject leaves it unlinked (OFNR's sender domain).
+            var reply = Mail(n, 4, thread, null, "오프너 회신 " + n);
+            (reply.Folder, reply.FromAddress) = ("보낸메일함", "ceo@ofnr.kr");
+            // A fresh unlinked mail threaded by subject, and another sender's unlinked mail with the same subject.
+            var subjectMail = Mail(n, 5, "subj:견적 요청 " + n, null, "새 문의 " + n);
+            var stranger = Mail(n, 6, "subj:견적 요청 " + n, null, "남의 메일 " + n);
+            stranger.FromAddress = "x@other.kr";
+            db.MailMessages.AddRange(reply, subjectMail, stranger);
+            var job = new Job { RecipeId = "reply", Title = "회신 초안", Mail = subjectMail };
+            db.Jobs.Add(job);
+            await db.SaveChangesAsync(Ct);
+            subjectJobId = job.Id;
+        }
+
+        await using (var client = await Connect(Tokens.Issue(s.JobId)))
+        {
+            var text = await Call(client, "get_mail_thread");
+            Assert.Contains("오프너 회신 " + n, text);
+            Assert.Equal(3, Regex.Count(text, "<untrusted_mail>"));
+        }
+        await using (var client = await Connect(Tokens.Issue(subjectJobId)))
+        {
+            var text = await Call(client, "get_mail_thread");
+            Assert.Contains("새 문의 " + n, text);
+            Assert.DoesNotContain("남의 메일", text);
+        }
+    }
+
+    [Fact]
+    public async Task Get_mail_thread_keeps_linked_mail_and_newest_of_a_long_thread()
+    {
+        var s = await Seed(withMail: false);
+        var n = s.JobNo[2..];
+        var thread = "<long-" + n + "@tnf.co.kr>";
+        using (var scope = host.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<OfnrDb>();
+            var mails = Enumerable.Range(1, 7).Select(i => Mail(n, i, thread, null, $"메일{i}번 " + n)).ToList();
+            db.MailMessages.AddRange(mails);
+            (await db.Jobs.SingleAsync(j => j.Id == s.JobId, Ct)).MailId = mails[0].Id; // the oldest
+            await db.SaveChangesAsync(Ct);
+        }
+        await using var client = await Connect(Tokens.Issue(s.JobId));
+
+        var text = await Call(client, "get_mail_thread");
+
+        Assert.Contains("스레드가 길어 오래된 메일 일부를 뺐습니다.", text);
+        Assert.Equal(4, Regex.Count(text, "<untrusted_mail>"));
+        Assert.Equal(["메일1번", "메일5번", "메일6번", "메일7번"], Regex.Matches(text, "메일[0-9]번").Select(m => m.Value));
+    }
+
+    [Fact]
     public async Task Save_reply_draft_creates_ai_draft_and_never_sends()
     {
         var s = await Seed();
@@ -207,6 +269,50 @@ public sealed class McpToolsTests(TestHost host) : IClassFixture<TestHost>
         Assert.Equal(("question", ApprovalStatus.Pending, s.RunId), (a.Kind, a.Status, a.RunId!.Value));
         Assert.Equal("부스 크기를 3x3으로 할까요?", a.Title);
         Assert.Equal("1. 3x3\n2. 6x3", a.Detail);
+    }
+
+    [Fact]
+    public async Task Ask_ceo_rejects_blank_question_and_skips_blank_options()
+    {
+        var s = await Seed(withMail: false);
+        await using var client = await Connect(Tokens.Issue(s.JobId));
+
+        var blank = await client.CallToolAsync("ask_ceo", new Dictionary<string, object?> { ["question"] = " " }, cancellationToken: Ct);
+        await Call(client, "ask_ceo", new() { ["question"] = "색은?", ["options"] = new[] { "검정", null, " ", "흰색" } });
+
+        Assert.True(blank.IsError);
+        Assert.Contains("질문을 입력해 주세요.", Assert.IsType<TextContentBlock>(Assert.Single(blank.Content)).Text);
+        using var scope = host.Services.CreateScope();
+        var a = await scope.ServiceProvider.GetRequiredService<OfnrDb>().Approvals.SingleAsync(x => x.JobId == s.JobId, Ct);
+        Assert.Equal("1. 검정\n2. 흰색", a.Detail);
+    }
+
+    [Fact]
+    public async Task Report_progress_and_runner_events_share_one_seq()
+    {
+        var s = await Seed(withMail: false);
+        await using var client = await Connect(Tokens.Issue(s.JobId));
+        var notifier = new RecordingNotifier();
+
+        // Each writer adds 3 events in order, so neither can lose the seq race 5 times in a row.
+        async Task Runner()
+        {
+            using var scope = host.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<OfnrDb>();
+            for (var i = 0; i < 3; i++) await JobEventLog.AppendAsync(db, notifier, s.JobId, s.RunId, "tool", "Write", Ct);
+        }
+        async Task Agent()
+        {
+            for (var i = 0; i < 3; i++) await Call(client, "report_progress", new() { ["message"] = "진행 " + i });
+        }
+        await Task.WhenAll(Runner(), Agent());
+
+        using var scope = host.Services.CreateScope();
+        var events = await scope.ServiceProvider.GetRequiredService<OfnrDb>().JobEvents.Where(e => e.JobId == s.JobId).OrderBy(e => e.Seq).ToListAsync(Ct);
+        Assert.Equal([1, 2, 3, 4, 5, 6], events.Select(e => e.Seq));
+        Assert.Equal(3, events.Count(e => e.Kind == "text"));
+        Assert.Equal(events.Where(e => e.Kind == "tool").Select(e => (e.Id, e.Seq, e.Kind)),
+            notifier.Calls.Cast<JobEventDto>().Select(e => (e.Id, e.Seq, e.Kind)));
     }
 
     [Fact]
