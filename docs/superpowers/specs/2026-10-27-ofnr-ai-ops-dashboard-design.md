@@ -213,7 +213,7 @@ D:\OFNR\Projects\2026\OFNR-26031_TNF-Seongsu\
 3. 실행 직전에 필요한 앱 상태를 확인한다(스케치업 MCP 포트 9876 등). 안 되면 "스케치업을 열고 MCP 서버를 켜 주세요" 확인 필요 카드를 띄우고 대기한다.
 4. 엔진을 띄운다. 작업 폴더는 프로젝트 폴더다. 프롬프트에는 프로젝트 정보, 대표의 지시, 연결 메일 발췌(신뢰할 수 없는 입력 표시), 결과물 이름 규칙이 들어간다. 프롬프트는 명령줄이 아니라 표준입력으로 넘긴다.
 5. 엔진 이벤트를 JobEvent로 저장하고 SignalR로 화면에 흘린다.
-6. 엔진이 승인이 필요한 도구를 쓰려 하면 승인 카드를 띄우고 대표의 결정을 기다린다(9.4).
+6. 엔진이 대표의 판단이 필요하면 `ask_ceo`로 질문을 남기고 작업을 정리해 끝낸다. 대표가 답하면 같은 세션으로 이어서 실행한다(9.4).
 7. 끝나면 새 파일과 바뀐 파일을 찾아 Artifact로 등록하고 작업을 `검토`로 바꾼다. 알림을 띄운다.
 8. 대표가 승인하거나, 수정 의견과 함께 후속 지시를 보낸다. 후속 지시는 같은 엔진 세션을 이어서 돈다.
 
@@ -231,7 +231,7 @@ D:\OFNR\Projects\2026\OFNR-26031_TNF-Seongsu\
 | 추가 지시 | `--append-system-prompt` | `-c developer_instructions=<JSON 문자열>` |
 | MCP | 작업별 `--mcp-config` + `--strict-mcp-config` | `-c mcp_servers.<이름>.*` 덮어쓰기, `default_tools_approval_mode="approve"`, `tool_timeout_sec=900`, `required=true` |
 | 구조화 출력 | `--json-schema` → 결과 이벤트의 `structured_output` | `--output-schema <파일>` → 마지막 `agent_message` |
-| 권한 | `--permission-mode acceptEdits` + `--allowedTools` + `--permission-prompt-tool` | `-c approval_policy="never"` + 샌드박스 |
+| 권한 | `--permission-mode dontAsk` + `--permission-prompts none` + 레시피별 `--allowedTools` | `-c approval_policy="never"` + 샌드박스 + 대시보드 MCP 도구별 `approval_mode="approve"` |
 | 이어서 실행 | `--resume <세션 ID>` | `exec ... resume <스레드 ID> -` (옵션은 resume 앞) |
 | 비용 | 결과 이벤트의 추정 비용, `--max-budget-usd` | 토큰 사용량만. 시간 제한으로 대신한다 |
 | 실패 판정 | 결과 이벤트 `is_error` 또는 종료 코드 | `turn.failed` 또는 종료 코드. `error` 이벤트는 재시도 알림이라 실패가 아니다. 시작 실패는 표준오류에만 나온다 |
@@ -250,7 +250,8 @@ D:\OFNR\Projects\2026\OFNR-26031_TNF-Seongsu\
 
 - 스케치업, 일러스트레이터, 포토샵 레시피는 Claude 전용으로 시작한다. Codex의 Windows 샌드박스에서 COM 조종이 되는지는 대표 PC에서 점검 후 연다.
 - 워드 문서 레시피는 Claude 전용이다. Anthropic 문서 스킬은 라이선스상 Codex에서 쓸 수 없다.
-- 엑셀, 파워포인트 레시피는 두 엔진 모두 쓸 수 있다. 실제 Office를 조종하는 MCP(sbroenne)를 쓰기 때문이다.
+- 엑셀, 파워포인트 레시피도 1차는 Claude 전용이다. Codex 샌드박스에서 Office COM MCP가 동작하는지 대표 PC에서 점검한 뒤 `config/recipes.json`의 `engines`에 codex를 추가한다.
+- Codex는 1차에서 요구사항 정리, 회신 초안, 자유 지시, 스킬 학습, 메일 분류에 쓴다.
 - Codex의 헤드리스 MCP 승인 버그(openai/codex#24135)에 대비해, 시작할 때 대시보드 MCP를 부르는 점검 작업을 한 번 돌리고 결과를 에이전트 화면에 표시한다.
 
 ### 9.4 대시보드 MCP 서버
@@ -263,9 +264,11 @@ D:\OFNR\Projects\2026\OFNR-26031_TNF-Seongsu\
 | `get_mail_thread` | 연결된 메일 (읽기 전용, 신뢰할 수 없는 입력 표시) |
 | `save_reply_draft` | 회신 초안 저장. 발송은 하지 않는다 |
 | `report_progress` | 진행 상황 한 줄 보고 |
-| `approval_prompt` | Claude의 권한 확인 요청을 받아 승인 카드로 띄우고 대표의 결정을 돌려준다 |
+| `ask_ceo` | 대표에게 질문을 남기고 바로 돌아온다. 대표가 답하면 그 답으로 같은 세션을 이어서 실행한다 |
 
-승인 대기는 메모리에 둔다. 서버가 재시작되면 해당 실행은 `stopped`가 되고 후속 지시로 이어 갈 수 있다.
+실시간 승인(도구 호출마다 대표가 승인)은 하지 않는다. Claude는 2분이 넘는 MCP 호출을 백그라운드로 돌리고 5분이면 끊으며, Codex의 도구 제한 시간은 기본 60초라서 대표를 기다리는 도구는 동작하지 않는다. 대신 레시피별 허용 목록 밖의 도구는 막고, 사람의 확인은 결과물 검토와 `ask_ceo` 질문으로 한다. 스케치업, 일러스트레이터처럼 임의 스크립트를 돌릴 수 있는 레시피에는 메일 원문을 넣지 않는다.
+
+서버가 재시작되면 실행 중이던 작업은 `stopped`가 되고 후속 지시로 이어 갈 수 있다.
 
 ## 10. 메일 연동
 
