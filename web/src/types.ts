@@ -144,7 +144,7 @@ export interface DraftInput {
 }
 export interface MailDraftDto extends DraftInput {
   id: string;
-  /** "ceo" or "ai" */
+  /** "owner" (the CEO) or "ai" */
   author: string;
   status: "draft" | "sent";
   createdAt: string;
