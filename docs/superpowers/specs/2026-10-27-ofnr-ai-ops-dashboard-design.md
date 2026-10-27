@@ -88,7 +88,7 @@ Agent Framework에는 Claude Code나 Codex CLI용 공식 패키지가 없다(NuG
 [Ofnr.Server: ASP.NET Core, Tauri가 띄우는 사이드카 프로세스]
       |-- PostgreSQL (EF Core)
       |-- 메일 동기화 (MailKit, 네이버웍스 IMAP/SMTP)
-      |-- 작업 큐 (동시 실행 수, 앱 잠금)
+      |-- 작업 큐 (동시 실행 수, 앱 잠금, 엔진별 동시 실행)
       |-- 대시보드 MCP 서버 (/mcp, 작업마다 1회용 토큰)
       `-- AI 엔진 실행 (Agent Framework AIAgent)
               |-- Claude Code CLI (claude -p, stream-json)
@@ -97,7 +97,7 @@ Agent Framework에는 Claude Code나 Codex CLI용 공식 패키지가 없다(NuG
 ```
 
 - 서버는 대표가 로그인한 세션의 일반 프로세스로 돈다. 일러스트레이터, 스케치업, Office의 COM 조종과 CLI 로그인 정보는 Windows 서비스(세션 0)에서 쓸 수 없기 때문이다.
-- 1차에서는 Tauri가 서버를 사이드카로 띄우고 끈다. 2차에서는 Tauri가 사무실 서버 주소를 바라본다(15장).
+- 1차에서는 Tauri가 서버를 사이드카로 띄우고 끈다. Tauri 앱은 로그인 시 자동 실행된다(작업 스케줄러를 쓰게 되면 실행 시간 제한을 0으로 둔다. 기본값 3일이 지나면 꺼진다). 2차에서는 Tauri가 사무실 서버 주소를 바라본다(15장).
 - 서버 안의 작업 실행부는 별도 모듈로 둔다. 2차에서 디자인 PC마다 실행부만 따로 돌리기 위해서다.
 
 ### 5.1 솔루션 구성
@@ -182,6 +182,8 @@ D:\OFNR\Projects\2026\OFNR-26031_TNF-Seongsu\
 
 - 폴더 이름은 영문(ASCII)으로 만든다. Claude Code는 한글 경로에서 세션 폴더가 섞이고 파일 검색이 실패하는 버그가 있다(이슈 #40946, #84966). 한글 프로젝트명은 DB에 둔다.
 - 파일 이름은 `{작업번호}_{문서}_v{NN}.{확장자}` (예: `OFNR-26031_QUOTE_v03.xlsx`). 덮어쓰지 않고 버전을 올린다. 고객 승인 후에만 `_FINAL`을 붙인다.
+- 폴더 약칭(`TNF-Seongsu`)은 24자 이내로 제한한다. 데스크톱 Excel은 218자가 넘는 경로를 열지 못한다.
+- 결과물 감지는 실행 전후의 파일 크기와 수정 시각만 비교한다. 내용을 읽으면 OneDrive 온디맨드 파일이 내려받아지기 때문이다.
 
 ## 9. AI 작업 실행
 
@@ -219,22 +221,37 @@ D:\OFNR\Projects\2026\OFNR-26031_TNF-Seongsu\
 
 ### 9.3 엔진별 실행
 
-| 항목 | Claude Code | Codex (ChatGPT) |
+두 엔진 모두 작업마다 전용 실행 폴더(`C:\OFNR\jobs\<작업ID>`, 영문 경로)에서 돈다. 프로젝트 폴더는 쓰기 허용 폴더로 추가한다. 실행 폴더에는 프롬프트, 결과 스키마, 결과 파일, Codex용 스킬 사본이 들어간다. 고객 프로젝트 폴더에는 결과물만 남는다.
+
+| 항목 | Claude Code 2.1.311 | Codex 0.164.0 (ChatGPT) |
 |---|---|---|
-| 실행 | `claude.exe -p --output-format stream-json --verbose` | `codex exec --json` (조사 확인 중) |
-| 회사 스킬 | `--plugin-dir claude-plugin` (확인 완료) | Codex 스킬 위치로 연결 (조사 확인 중) |
-| MCP | 작업별 `--mcp-config` + `--strict-mcp-config` | 설정 덮어쓰기 (조사 확인 중) |
-| 구조화 출력 | `--json-schema` (확인 완료) | `--output-schema` (조사 확인 중) |
-| 권한 | `--permission-mode acceptEdits` + `--allowedTools` + `--permission-prompt-tool` | 샌드박스 `workspace-write`, 위험 도구 레시피는 Claude 전용 |
-| 이어서 실행 | `--resume <세션 ID>` | `codex exec resume` (조사 확인 중) |
-| 비용 | 결과 이벤트의 추정 비용 | 토큰 사용량 |
+| 실행 | `claude.exe -p --output-format stream-json --verbose` | `codex.exe exec --json --skip-git-repo-check --ignore-user-config` |
+| 폴더 | 작업 디렉터리 = 실행 폴더, `--add-dir <프로젝트 폴더>` | `-C <실행 폴더>`, `-s workspace-write`, `--add-dir <프로젝트 폴더>` |
+| 회사 스킬 | `--plugin-dir claude-plugin` | 필요한 스킬 폴더를 `<실행 폴더>\.agents\skills\`로 복사 |
+| 추가 지시 | `--append-system-prompt` | `-c developer_instructions=<JSON 문자열>` |
+| MCP | 작업별 `--mcp-config` + `--strict-mcp-config` | `-c mcp_servers.<이름>.*` 덮어쓰기, `default_tools_approval_mode="approve"`, `tool_timeout_sec=900`, `required=true` |
+| 구조화 출력 | `--json-schema` → 결과 이벤트의 `structured_output` | `--output-schema <파일>` → 마지막 `agent_message` |
+| 권한 | `--permission-mode acceptEdits` + `--allowedTools` + `--permission-prompt-tool` | `-c approval_policy="never"` + 샌드박스 |
+| 이어서 실행 | `--resume <세션 ID>` | `exec ... resume <스레드 ID> -` (옵션은 resume 앞) |
+| 비용 | 결과 이벤트의 추정 비용, `--max-budget-usd` | 토큰 사용량만. 시간 제한으로 대신한다 |
+| 실패 판정 | 결과 이벤트 `is_error` 또는 종료 코드 | `turn.failed` 또는 종료 코드. `error` 이벤트는 재시도 알림이라 실패가 아니다. 시작 실패는 표준오류에만 나온다 |
 
 공통 규칙:
 
-- 실행 파일을 직접 띄운다(`.cmd` 경유 금지). 표준입력은 프롬프트를 쓴 뒤 닫는다.
+- 실행 파일을 직접 띄운다(`.cmd` 경유 금지). 표준입력에 프롬프트를 쓰고 닫는다. 표준입출력은 UTF-8.
 - 자식 프로세스 환경에서 `CLAUDECODE`, `CLAUDE_CODE_*` 변수를 지운다.
-- 이어서 실행은 세션 ID로만 한다(`--continue` 금지).
-- 엔진 버전을 첫 이벤트에서 기록한다. 업데이트로 이벤트 형식이 바뀌면 로그에서 바로 보이게 한다.
+- 결과 스키마는 OpenAI 엄격 모드 규칙으로 쓴다(모든 필드 required, additionalProperties false, 선택 값은 null 허용). Claude도 이 스키마를 받는다.
+- 이어서 실행은 세션 ID로만 한다(`--continue` 금지). 이어갈 수 있게 Codex는 `--ephemeral`을 쓰지 않는다.
+- 엔진 버전을 기록하고, 고정한 버전과 다르면 에이전트 화면에 경고를 띄운다.
+- Codex는 같은 PC에서 한 번에 하나만 돌린다(로그인 토큰 갱신 충돌 방지).
+- 시간 제한(레시피별, 기본 30분)을 넘으면 프로세스 트리째 종료한다.
+
+엔진별 레시피 제한 (1차):
+
+- 스케치업, 일러스트레이터, 포토샵 레시피는 Claude 전용으로 시작한다. Codex의 Windows 샌드박스에서 COM 조종이 되는지는 대표 PC에서 점검 후 연다.
+- 워드 문서 레시피는 Claude 전용이다. Anthropic 문서 스킬은 라이선스상 Codex에서 쓸 수 없다.
+- 엑셀, 파워포인트 레시피는 두 엔진 모두 쓸 수 있다. 실제 Office를 조종하는 MCP(sbroenne)를 쓰기 때문이다.
+- Codex의 헤드리스 MCP 승인 버그(openai/codex#24135)에 대비해, 시작할 때 대시보드 MCP를 부르는 점검 작업을 한 번 돌리고 결과를 에이전트 화면에 표시한다.
 
 ### 9.4 대시보드 MCP 서버
 
