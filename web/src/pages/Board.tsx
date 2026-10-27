@@ -49,15 +49,16 @@ const useStyles = makeStyles({
     backgroundColor: tokens.colorNeutralBackground3,
     borderRadius: tokens.borderRadiusLarge,
   },
+  // Always two lines (stage and count, then total) so every column header has the same height.
   colHead: {
     display: "flex",
-    flexWrap: "wrap",
-    alignItems: "baseline",
-    columnGap: tokens.spacingHorizontalS,
+    flexDirection: "column",
     paddingInline: tokens.spacingHorizontalXS,
     whiteSpace: "nowrap",
+    fontVariantNumeric: "tabular-nums",
   },
-  sum: { marginInlineStart: "auto", color: tokens.colorNeutralForeground3 },
+  colTitle: { display: "flex", alignItems: "baseline", columnGap: tokens.spacingHorizontalS },
+  sum: { textAlign: "end", color: tokens.colorNeutralForeground3 },
   card: { gap: tokens.spacingVerticalXS, cursor: "grab" },
   cardTop: { display: "flex", alignItems: "center", gap: tokens.spacingHorizontalXS },
   name: { fontWeight: tokens.fontWeightSemibold },
@@ -188,11 +189,13 @@ export function Board() {
                     }}
                   >
                     <div className={s.colHead}>
-                      <Subtitle2 as="h2" id={`col-${stage}`}>
-                        {stageLabel(stage)}
-                      </Subtitle2>
-                      <Caption1 className={ui.muted}>{items.length}건</Caption1>
-                      {sum > 0 && <Caption1 className={s.sum}>{formatKrw(sum)}</Caption1>}
+                      <div className={s.colTitle}>
+                        <Subtitle2 as="h2" id={`col-${stage}`}>
+                          {stageLabel(stage)}
+                        </Subtitle2>
+                        <Caption1 className={ui.muted}>{items.length}건</Caption1>
+                      </div>
+                      <Caption1 className={s.sum}>{formatKrw(sum)}</Caption1>
                     </div>
                     {items.map((p) => (
                       <ProjectCard key={p.id} p={p} onMove={move} />

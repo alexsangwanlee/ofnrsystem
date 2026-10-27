@@ -8,6 +8,7 @@ import type { OpsHandlers } from "../realtime";
 import type {
   AgentsDto,
   HealthDto,
+  JobDetailDto,
   JobDto,
   JobEventDto,
   MailDetailDto,
@@ -24,6 +25,7 @@ import { NewJobDialog } from "../components/NewJobDialog";
 import { ProjectForm, toInput } from "../components/ProjectForm";
 import { Agents } from "./Agents";
 import { Board } from "./Board";
+import { JobDetail } from "./JobDetail";
 import { Mail } from "./Mail";
 import { Settings } from "./Settings";
 import { Today } from "./Today";
@@ -272,6 +274,108 @@ describe("pages", () => {
     expect(calls).toContainEqual({ method: "POST", path: "/api/approvals/a1/decide", body: { decision: "accept" } });
   });
 
+  it("Board_column_header_puts_total_on_its_own_line_in_every_column", async () => {
+    mockApi({ "GET /api/projects": [project] });
+    renderAt(<Board />);
+
+    await screen.findByText("성수 팝업");
+    const totals = screen.getAllByRole("heading", { level: 2 }).map((h) => {
+      const title = h.parentElement!;
+      expect(title.textContent).toMatch(/^\S+\d+건$/);
+      return title.nextElementSibling?.textContent;
+    });
+    expect(totals).toEqual(["0원", "0원", "12,000,000원", "0원", "0원", "0원", "0원"]);
+  });
+
+  it("Question_card_answers_with_an_option_and_today_shows_the_confirmation", async () => {
+    const question = {
+      kind: "approval" as const,
+      jobId: "j1",
+      title: "견적서 · 성수 팝업",
+      detail: JSON.stringify({ question: "부가세를 포함할까요?", options: ["포함", "별도"] }),
+      approvalId: "a1",
+      approvalKind: "question",
+    };
+    let loads = 0;
+    const calls = mockApi({
+      "GET /api/today": () => ({
+        counts: { attention: loads === 0 ? 1 : 0, running: 0, thisWeek: 0 },
+        attention: loads++ === 0 ? [question] : [],
+        unsortedMail: [],
+        upcoming: [],
+        running: [],
+      }),
+      "POST /api/approvals/a1/decide": { id: "a1", status: "Decided", decision: "accept" },
+    });
+    renderAt(<Today />);
+
+    const card = await screen.findByRole("article", { name: "견적서 · 성수 팝업" });
+    expect(within(card).getByText("AI 질문")).toBeTruthy();
+    expect(within(card).getByText("부가세를 포함할까요?")).toBeTruthy();
+    for (const name of ["포함", "별도", "답변 보내기", "무시"]) expect(within(card).getByRole("button", { name })).toBeTruthy();
+    expect(within(card).queryByRole("button", { name: "승인" })).toBeNull();
+
+    fireEvent.click(within(card).getByRole("button", { name: "별도" }));
+    expect(await screen.findByText("답변을 보냈습니다. 같은 작업이 이어서 실행됩니다.")).toBeTruthy();
+    await waitFor(() => expect(screen.queryByRole("article", { name: "견적서 · 성수 팝업" })).toBeNull());
+    expect(calls).toContainEqual({ method: "POST", path: "/api/approvals/a1/decide", body: { decision: "accept", text: "별도" } });
+  });
+
+  it("Question_card_sends_typed_answer_only_on_ctrl_enter_outside_ime_and_ignore_closes", async () => {
+    const calls = mockApi({ "POST /api/approvals/a1/decide": { id: "a1", status: "Decided" } });
+    const onDone = vi.fn();
+    const item = { kind: "approval" as const, jobId: "j1", title: "견적서", detail: "단가표가 두 개입니다. 어느 쪽을 쓸까요?", approvalId: "a1", approvalKind: "question" };
+    renderAt(<ApprovalCard item={item} onDone={onDone} />);
+
+    expect(screen.getByText("단가표가 두 개입니다. 어느 쪽을 쓸까요?")).toBeTruthy();
+    const box = screen.getByLabelText(/^답변/);
+    fireEvent.change(box, { target: { value: "2026년 단가표" } });
+    fireEvent.keyDown(box, { key: "Enter" });
+    fireEvent.keyDown(box, { key: "Enter", ctrlKey: true, isComposing: true });
+    fireEvent.keyDown(box, { key: "Enter", ctrlKey: true, keyCode: 229 });
+    expect(calls).toEqual([]);
+
+    expect(fireEvent.keyDown(box, { key: "Enter", ctrlKey: true, keyCode: 13 })).toBe(false);
+    await waitFor(() => expect(onDone).toHaveBeenCalledWith("답변을 보냈습니다. 같은 작업이 이어서 실행됩니다."));
+    expect(calls).toEqual([{ method: "POST", path: "/api/approvals/a1/decide", body: { decision: "respond", text: "2026년 단가표" } }]);
+
+    cleanup();
+    renderAt(<ApprovalCard item={item} onDone={onDone} />);
+    fireEvent.click(screen.getByRole("button", { name: "무시" }));
+    await waitFor(() => expect(onDone).toHaveBeenLastCalledWith("질문을 닫았습니다."));
+    expect(calls[1].body).toEqual({ decision: "ignore" });
+  });
+
+  it("JobDetail_shows_pending_question_as_ai_question_and_confirms_the_answer", async () => {
+    const detail: JobDetailDto = {
+      job: job({ status: "NeedsAttention" }),
+      runs: [],
+      events: [],
+      approvals: [
+        { id: "a1", jobId: "j1", kind: "question", title: "확인 요청", detail: "현장 사진이 있나요?", status: "Pending", decision: null, createdAt: "2026-10-27T01:10:00Z" },
+      ],
+      artifacts: [],
+      feedback: [],
+      result: null,
+    };
+    let loads = 0;
+    const calls = mockApi({
+      "GET /api/jobs/j1": () => (loads++ === 0 ? detail : { ...detail, approvals: [] }),
+      "GET /api/projects/p1": { project, mails: [], jobs: [], artifacts: [], activity: [] },
+      "GET /api/skills": [],
+      "POST /api/approvals/a1/decide": { id: "a1", status: "Decided", decision: "respond" },
+    });
+    renderAt(<JobDetail />, "/jobs/j1", "/jobs/:id");
+
+    const card = await screen.findByRole("article", { name: "확인 요청" });
+    expect(within(card).getByText("AI 질문")).toBeTruthy();
+    fireEvent.change(within(card).getByLabelText(/^답변/), { target: { value: "없습니다" } });
+    fireEvent.click(within(card).getByRole("button", { name: "답변 보내기" }));
+
+    expect(await screen.findByText("답변을 보냈습니다. 같은 작업이 이어서 실행됩니다.")).toBeTruthy();
+    expect(calls).toContainEqual({ method: "POST", path: "/api/approvals/a1/decide", body: { decision: "respond", text: "없습니다" } });
+  });
+
   it("Mail_send_requires_confirmation", async () => {
     const calls = mockApi(mailRoutes);
     renderAt(<Mail />, "/mail/m1", "/mail/:id");
@@ -332,7 +436,9 @@ describe("pages", () => {
     const tools = document.querySelectorAll("details");
     expect(tools).toHaveLength(1);
     expect(tools[0].open).toBe(false);
-    expect(tools[0].querySelector("summary")?.textContent).toContain("mcp__ofnr__get_project");
+    expect(tools[0].querySelector("summary")?.textContent).toContain('프로젝트 정보 읽기 {"id":"p1"}');
+    expect(tools[0].querySelector("summary")?.textContent).not.toContain("mcp__");
+    expect(tools[0].textContent).toContain('mcp__ofnr__get_project {"id":"p1"}');
   });
 
   it("NewJobDialog_hides_codex_for_claude_only_recipe", async () => {

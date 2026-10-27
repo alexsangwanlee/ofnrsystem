@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
-import { formatTime } from "../format";
+import { formatTime, toolLabel } from "../format";
 import { joinJob, leaveJob, useOps } from "../realtime";
 import type { JobEventDto } from "../types";
 
@@ -36,7 +36,11 @@ const useStyles = makeStyles({
   },
 });
 
-const toolName = (summary: string) => /^[^\s:(]+/.exec(summary)?.[0] ?? summary;
+/** "Read src/a.ts" shows as "파일 읽기 src/a.ts"; the raw summary stays in the expanded details. */
+const toolLine = (summary: string) => {
+  const name = /^[^\s:(]+/.exec(summary)?.[0] ?? summary;
+  return toolLabel(name) + summary.slice(name.length);
+};
 
 /** Job events: history from the job detail plus live `jobEvent`s, with tool calls collapsed. */
 export function JobLog({ jobId, events }: { jobId: string; events: JobEventDto[] }) {
@@ -82,7 +86,7 @@ export function JobLog({ jobId, events }: { jobId: string; events: JobEventDto[]
         e.kind === "tool" ? (
           <details key={`${e.runId}:${e.seq}`} className={s.tool}>
             <summary>
-              <span className={s.time}>{formatTime(e.at)}</span> {toolName(e.summary)}
+              <span className={s.time}>{formatTime(e.at)}</span> {toolLine(e.summary)}
             </summary>
             <div className={s.args}>{e.summary}</div>
           </details>

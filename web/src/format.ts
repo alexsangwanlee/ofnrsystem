@@ -84,3 +84,38 @@ const LOCKS: Record<string, string> = { office: "Office", sketchup: "SketchUp", 
 export function lockLabel(name: string): string {
   return LOCKS[name] ?? name;
 }
+
+const TOOL_LABELS = new Map([
+  ["mcp__ofnr__get_project", "프로젝트 정보 읽기"],
+  ["mcp__ofnr__get_mail_thread", "메일 읽기"],
+  ["mcp__ofnr__save_reply_draft", "회신 초안 저장"],
+  ["mcp__ofnr__report_progress", "진행 보고"],
+  ["mcp__ofnr__ask_ceo", "대표에게 질문"],
+  ["Read", "파일 읽기"],
+  ["Write", "파일 쓰기"],
+  ["Edit", "파일 수정"],
+  ["Glob", "파일 찾기"],
+  ["Grep", "파일 찾기"],
+  ["Skill", "스킬 사용"],
+  ["TodoWrite", "작업 목록 정리"],
+  ["Bash", "명령 실행"],
+  ["PowerShell", "명령 실행"],
+  // Codex item types.
+  ["command_execution", "명령 실행"],
+  ["file_change", "파일 변경"],
+]);
+const APP_LABELS = new Map([
+  ["excel", "엑셀"],
+  ["powerpoint", "파워포인트"],
+  ["sketchup", "스케치업"],
+  ["illustrator", "일러스트레이터"],
+  ["photoshop", "포토샵"],
+]);
+
+/** Korean label for a CLI tool name; unknown tools keep their raw name. */
+export function toolLabel(name: string): string {
+  const app = /^mcp__([^_]+)__(.+)$/.exec(name);
+  const appLabel = app ? APP_LABELS.get(app[1]) : undefined;
+  if (app && appLabel) return `${appLabel}: ${app[2].replaceAll("_", " ")}`;
+  return TOOL_LABELS.get(name) ?? name;
+}

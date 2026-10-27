@@ -248,6 +248,8 @@ export interface AttentionDto {
   title: string;
   detail: string | null;
   approvalId?: string | null;
+  /** `ApprovalDto.kind` when `kind` is "approval"; "question" comes from ask_ceo. */
+  approvalKind?: string | null;
 }
 export interface UpcomingDto {
   projectId: string;

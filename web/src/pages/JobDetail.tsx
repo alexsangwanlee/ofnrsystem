@@ -36,6 +36,7 @@ export function JobDetail() {
   const [skill, setSkill] = useState("");
   const [feedbackMissing, setFeedbackMissing] = useState(false);
   const [note, setNote] = useState<string>();
+  const [answered, setAnswered] = useState<string>();
 
   useOps({
     jobUpdated: (j) => j.id === id && detail.reload(),
@@ -108,13 +109,17 @@ export function JobDetail() {
           >
             {action.error && <ErrorBar message={action.error} />}
             {project.error && <ErrorBar message={project.error} onRetry={project.reload} />}
+            {answered && <Caption1 aria-live="polite">{answered}</Caption1>}
             {pending.length > 0 && (
               <div className={s.cards}>
                 {pending.map((a) => (
                   <ApprovalCard
                     key={a.id}
-                    item={{ kind: "approval", jobId: a.jobId, title: a.title, detail: a.detail, approvalId: a.id }}
-                    onDone={detail.reload}
+                    item={{ kind: "approval", jobId: a.jobId, title: a.title, detail: a.detail, approvalId: a.id, approvalKind: a.kind }}
+                    onDone={(message) => {
+                      setAnswered(message);
+                      detail.reload();
+                    }}
                   />
                 ))}
               </div>

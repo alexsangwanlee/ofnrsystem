@@ -21,6 +21,7 @@ export function Today() {
   const navigate = useNavigate();
   const today = useApi<TodayDto>("/api/today");
   const [lastLine, setLastLine] = useState<Record<string, string>>({});
+  const [answered, setAnswered] = useState<string>();
 
   useOps({
     jobUpdated: today.reload,
@@ -54,6 +55,7 @@ export function Today() {
             </div>
             <div className={s.grid}>
               <Section title="확인 필요">
+                {answered && <Caption1 aria-live="polite">{answered}</Caption1>}
                 {t.attention.length === 0 ? (
                   <div className={ui.card}>
                     <EmptyState
@@ -65,7 +67,14 @@ export function Today() {
                 ) : (
                   <div className={s.cards}>
                     {t.attention.map((a) => (
-                      <ApprovalCard key={a.approvalId ?? `${a.kind}-${a.jobId}`} item={a} onDone={today.reload} />
+                      <ApprovalCard
+                        key={a.approvalId ?? `${a.kind}-${a.jobId}`}
+                        item={a}
+                        onDone={(message) => {
+                          setAnswered(message);
+                          today.reload();
+                        }}
+                      />
                     ))}
                   </div>
                 )}
