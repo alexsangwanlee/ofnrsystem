@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Ofnr.Server.Data;
 using Ofnr.Server.Jobs;
+using Ofnr.Server.Mail;
 using Ofnr.Server.Realtime;
 using Activity = Ofnr.Server.Data.Activity;
 
@@ -119,10 +120,7 @@ public static class ProjectEndpoints
             if (await ValidateAsync(db, input) is { } error) return Error(400, error);
             Project p;
             try { p = await CreateAsync(db, settings.Current, input); }
-            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-            {
-                return Error(400, $"프로젝트 폴더를 만들지 못했습니다. 설정에서 프로젝트 폴더를 확인해 주세요: {e.Message}");
-            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return FolderFailed(e); }
             var dto = await DtoAsync(db, p.Id);
             await ops.ProjectUpdated(dto);
             return Results.Ok(dto);
@@ -188,10 +186,7 @@ public static class ProjectEndpoints
     static async Task<ProjectDetailDto?> DetailAsync(OfnrDb db, RecipeCatalog recipes, Guid id)
     {
         if (await db.Projects.Where(p => p.Id == id).ToDtos(db).SingleOrDefaultAsync() is not { } project) return null;
-        var mails = await db.MailMessages.Where(m => m.ProjectId == id).OrderByDescending(m => m.ReceivedAt)
-            .Select(m => new MailSummaryDto(m.Id, m.FromName, m.FromAddress, m.Subject, m.ReceivedAt, m.Status, m.Category, m.Summary,
-                m.ProjectId, project.JobNo, m.SuggestedProjectId, m.SuggestedConfidence, m.Attachments.Count > 0))
-            .ToListAsync();
+        var mails = await db.MailMessages.Where(m => m.ProjectId == id).OrderByDescending(m => m.ReceivedAt).ToSummaries().ToListAsync();
         var jobs = await db.Jobs.Where(j => j.ProjectId == id).OrderByDescending(j => j.CreatedAt).ToDtosAsync(db, recipes);
         var artifacts = await db.Artifacts.Where(a => a.ProjectId == id).OrderBy(a => a.RelativePath)
             .Select(a => new ArtifactDto(a.Id, a.ProjectId, a.JobId, a.RelativePath, a.DocCode, a.Version, a.Status, a.Size, a.ModifiedAt))
@@ -226,7 +221,7 @@ public static class ProjectEndpoints
         return Results.NoContent();
     }
 
-    static bool IsUnder(string full, string root)
+    internal static bool IsUnder(string full, string root)
     {
         var r = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
         var cmp = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
@@ -260,6 +255,8 @@ public static class ProjectEndpoints
     }
 
     static IResult ProjectNotFound() => Error(404, "프로젝트를 찾을 수 없습니다.");
+
+    internal static IResult FolderFailed(Exception e) => Error(400, $"프로젝트 폴더를 만들지 못했습니다. 설정에서 프로젝트 폴더를 확인해 주세요: {e.Message}");
 
     internal static IResult Error(int status, string message) => Results.Json(new { error = message }, statusCode: status);
 }

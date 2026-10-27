@@ -68,7 +68,7 @@ public sealed class BootstrapTests
 
         Bootstrap.EnsureDataRoot(o, Content);
 
-        var check = Assert.Single(Health.Build(o, null).Paths, c => c.Name == "프로젝트 폴더");
+        var check = Assert.Single(Health.Build(o, null, new("메일", true, "")).Paths, c => c.Name == "프로젝트 폴더");
         Assert.False(check.Ok);
         Assert.Contains(o.ProjectsRoot, check.Detail);
     }

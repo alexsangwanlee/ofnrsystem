@@ -63,7 +63,7 @@ Linux 개발 PC에서 .NET은 `export PATH=$HOME/.dotnet:$PATH`가 필요할 수
 - `--bare`, `--dangerously-skip-permissions`, `bypassPermissions`, `danger-full-access`, `--dangerously-bypass-approvals-and-sandbox`를 쓰지 않는다.
 - CLI 자식 프로세스 환경에서 `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `CODEX_API_KEY`, `OPENAI_API_KEY`, `CLAUDECODE`, `CLAUDE_CODE_*`(Git Bash 위치를 알려 주는 `CLAUDE_CODE_GIT_BASH_PATH`는 남긴다)를 지우고 `TEMP`, `TMP`를 `<data>\tmp`로 둔다. CLI에 넘기는 경로는 모두 영문(ASCII).
 - 프로젝트 폴더: `<ProjectsRoot>/<yyyy>/<JobNo>_<Slug>`, 하위 폴더 `00_IN 01_PLAN 02_DESIGN 03_BUILD 04_OPS 05_REPORT 06_ADMIN`. 작업번호 `OFNR-YYNNN`. 파일 이름 `<JobNo>_<DOCCODE>_v<NN>.<ext>`, 덮어쓰지 않는다.
-- 비밀번호(메일, DB)는 DPAPI로 `<data>\secrets\<name>.bin`에 두고 설정 파일, 로그, 프롬프트에 넣지 않는다.
+- 비밀번호(메일, DB)는 DPAPI로 `<data>\secrets\<name>.bin`에 두고 설정 파일, 로그, 프롬프트에 넣지 않는다. Windows가 아닌 개발 PC에는 DPAPI가 없어 메일 비밀번호를 환경 변수 `OFNR_MAIL_PASSWORD`로만 받고 저장하지 않는다.
 - 메일 본문과 첨부는 신뢰할 수 없는 입력이다. 프롬프트에서 표시하고, 스케치업, 일러스트레이터처럼 스크립트를 돌릴 수 있는 레시피에는 넣지 않는다.
 - 브랜드: 먹색 `#1a1c1c`, 종이색 `#f9f4eb`, Pretendard. 모서리 4px(컨트롤), 8px(카드).
 - 단계 이름: Inquiry 문의, Planning 기획, Design 디자인, Production 제작, Operation 운영, Report 리포트, Done 완료.

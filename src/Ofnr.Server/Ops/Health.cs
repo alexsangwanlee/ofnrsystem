@@ -2,16 +2,18 @@ namespace Ofnr.Server.Ops;
 
 public sealed record CheckDto(string Name, bool Ok, string Detail);
 
-public sealed record HealthDto(string Version, string DataRoot, string ProjectsRoot, CheckDto Db, CheckDto[] Paths);
+public sealed record HealthDto(string Version, string DataRoot, string ProjectsRoot, CheckDto Db, CheckDto Mail, CheckDto[] Paths);
 
 public static class Health
 {
     /// <param name="dbError">The startup migration failure, or null when it succeeded.</param>
-    public static HealthDto Build(OfnrOptions o, string? dbError) => new(
+    /// <param name="mail">The mail sync's last result.</param>
+    public static HealthDto Build(OfnrOptions o, string? dbError, CheckDto mail) => new(
         typeof(Health).Assembly.GetName().Version!.ToString(3),
         o.DataRoot,
         o.ProjectsRoot,
         new("데이터베이스", dbError is null, dbError ?? "연결됨"),
+        mail,
         [ProjectsFolder(o.ProjectsRoot), AsciiPath("작업 폴더", o.JobsRoot)]);
 
     // Bootstrap lets the server start without this folder, so a missing drive shows up here.

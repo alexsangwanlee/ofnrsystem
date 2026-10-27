@@ -121,9 +121,12 @@ public sealed class JobHost : IAsyncDisposable
     static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     readonly TestHost host = new();
+    readonly Action<IServiceCollection>? services;
 
-    public JobHost()
+    /// <param name="services">Extra test services, such as fakes for the mail server.</param>
+    public JobHost(Action<IServiceCollection>? services = null)
     {
+        this.services = services;
         File.WriteAllText(Path.Combine(DataRoot, "mcp.json"), """
             { "mcpServers": { "excel": { "command": "excel-mcp" }, "powerpoint": { "command": "ppt-mcp" },
               "sketchup": { "command": "sketchup-mcp" }, "illustrator": { "command": "illustrator-mcp" } } }
@@ -141,7 +144,11 @@ public sealed class JobHost : IAsyncDisposable
 
     WebApplicationFactory<Program> Start()
     {
-        var app = host.WithWebHostBuilder(b => b.ConfigureTestServices(s => s.AddSingleton<AgentFactory>(Agents).AddSingleton<IOpsNotifier>(Notifier)));
+        var app = host.WithWebHostBuilder(b => b.ConfigureTestServices(s =>
+        {
+            s.AddSingleton<AgentFactory>(Agents).AddSingleton<IOpsNotifier>(Notifier);
+            services?.Invoke(s);
+        }));
         _ = app.Services; // starts the server, which migrates the database
         return app;
     }

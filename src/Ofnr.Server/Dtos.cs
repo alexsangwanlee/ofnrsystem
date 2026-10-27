@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Ofnr.Server.Data;
 using Ofnr.Server.Jobs;
 
@@ -79,3 +80,22 @@ public sealed record ApprovalDto(Guid Id, Guid JobId, string Kind, string Title,
 public sealed record MailSummaryDto(
     Guid Id, string FromName, string FromAddress, string Subject, DateTimeOffset ReceivedAt, MailStatus Status, string? Category, string? Summary,
     Guid? ProjectId, string? JobNo, Guid? SuggestedProjectId, double? SuggestedConfidence, bool HasAttachments);
+
+/// <param name="Extracted">The triage fields (Task 8), an empty object before triage.</param>
+public sealed record MailDetailDto(
+    Guid Id, string FromName, string FromAddress, string Subject, DateTimeOffset ReceivedAt, MailStatus Status, string? Category, string? Summary,
+    Guid? ProjectId, string? JobNo, Guid? SuggestedProjectId, double? SuggestedConfidence, bool HasAttachments,
+    string To, string? Cc, string? TextBody, string? HtmlBody, List<MailAttachment> Attachments, JsonElement Extracted, List<MailSummaryDto> Thread);
+
+public sealed record MailLinkInput(Guid? ProjectId);
+
+public sealed record MailStatusInput(MailStatus? Status);
+
+public sealed record DraftInput(Guid? ReplyToMailId, Guid? ProjectId, string? To, string? Cc, string? Subject, string? Body, string[]? Attachments);
+
+public sealed record MailDraftDto(
+    Guid Id, Guid? ReplyToMailId, Guid? ProjectId, string To, string? Cc, string Subject, string Body, string[] Attachments, string Author, string Status,
+    DateTimeOffset CreatedAt, DateTimeOffset? SentAt)
+{
+    public static MailDraftDto From(MailDraft d) => new(d.Id, d.ReplyToMailId, d.ProjectId, d.To, d.Cc, d.Subject, d.Body, d.Attachments, d.Author, d.Status, d.CreatedAt, d.SentAt);
+}

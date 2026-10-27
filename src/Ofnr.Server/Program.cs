@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.EntityFrameworkCore;
@@ -9,6 +10,7 @@ using Ofnr.Server;
 using Ofnr.Server.Agents;
 using Ofnr.Server.Data;
 using Ofnr.Server.Jobs;
+using Ofnr.Server.Mail;
 using Ofnr.Server.Mcp;
 using Ofnr.Server.Ops;
 using Ofnr.Server.Projects;
@@ -28,7 +30,11 @@ builder.Services.AddSignalR().AddJsonProtocol(o => o.PayloadSerializerOptions.Co
 // Binding failures throw in every environment so the handler below can answer them in the { error } shape.
 builder.Services.Configure<RouteHandlerOptions>(o => o.ThrowOnBadRequest = true);
 builder.Services.AddSingleton<IOpsNotifier, OpsNotifier>();
-builder.Services.AddDbContext<OfnrDb>((sp, o) => o.UseNpgsql(sp.GetRequiredService<SettingsStore>().Current.ConnectionString));
+// EUC-KR and ks_c_5601-1987 mail would otherwise decode as mojibake.
+Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+builder.Services.AddSingleton<SecretStore>();
+builder.Services.AddDbContext<OfnrDb>((sp, o) =>
+    o.UseNpgsql(sp.GetRequiredService<SecretStore>().WithDbPassword(sp.GetRequiredService<SettingsStore>().Current.ConnectionString)));
 builder.Services.AddSingleton<JobTokens>();
 builder.Services.AddScoped<Approvals>();
 // Loaded on first use, after Bootstrap has copied the shipped recipes.json into the data root.
@@ -38,6 +44,12 @@ builder.Services.AddSingleton<JobRunner>();
 builder.Services.AddSingleton<JobQueue>();
 builder.Services.AddSingleton<IJobQueue>(sp => sp.GetRequiredService<JobQueue>());
 builder.Services.AddHostedService(sp => sp.GetRequiredService<JobQueue>());
+builder.Services.AddScoped<IImapSource, MailKitImapSource>();
+builder.Services.AddScoped<ISmtpTransport, MailKitSmtp>();
+builder.Services.AddScoped<MailSender>();
+builder.Services.AddSingleton<MailSync>();
+builder.Services.AddSingleton<IMailSync>(sp => sp.GetRequiredService<MailSync>());
+builder.Services.AddHostedService(sp => sp.GetRequiredService<MailSync>());
 builder.Services.AddMcpServer()
     .WithHttpTransport(o => o.SessionMode = HttpServerSessionMode.Stateless)
     .WithTools<OfnrTools>();
@@ -85,8 +97,9 @@ app.Use(async (ctx, next) =>
     }
 });
 
-app.MapGet("/api/health", () => Health.Build(settings.Current, dbError));
+app.MapGet("/api/health", (IMailSync mail) => Health.Build(settings.Current, dbError, mail.Health));
 app.MapProjectEndpoints();
+app.MapMailEndpoints();
 app.MapJobEndpoints();
 app.MapHub<OpsHub>("/hubs/ops");
 app.UseWhen(ctx => ctx.Request.Path.StartsWithSegments("/mcp"), mcp => mcp.Use(JobTokens.Authenticate));
