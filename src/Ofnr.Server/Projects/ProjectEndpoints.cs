@@ -3,6 +3,7 @@ using System.Diagnostics;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Ofnr.Server.Data;
+using Ofnr.Server.Jobs;
 using Ofnr.Server.Realtime;
 using Activity = Ofnr.Server.Data.Activity;
 
@@ -127,11 +128,11 @@ public static class ProjectEndpoints
             return Results.Ok(dto);
         });
 
-        app.MapGet("/api/projects/{id:guid}", async (OfnrDb db, Guid id) =>
-            await DetailAsync(db, id) is { } d ? Results.Ok(d) : ProjectNotFound());
+        app.MapGet("/api/projects/{id:guid}", async (OfnrDb db, RecipeCatalog recipes, Guid id) =>
+            await DetailAsync(db, recipes, id) is { } d ? Results.Ok(d) : ProjectNotFound());
 
         // The folder name and stage stay as they are: the folder holds the files, and stage moves go through /stage.
-        app.MapPut("/api/projects/{id:guid}", async (OfnrDb db, IOpsNotifier ops, Guid id, ProjectInput input) =>
+        app.MapPut("/api/projects/{id:guid}", async (OfnrDb db, RecipeCatalog recipes, IOpsNotifier ops, Guid id, ProjectInput input) =>
         {
             if (await db.Projects.FindAsync(id) is not { } p) return ProjectNotFound();
             if (await ValidateAsync(db, input) is { } error) return Error(400, error);
@@ -139,12 +140,12 @@ public static class ProjectEndpoints
             p.UpdatedAt = DateTimeOffset.UtcNow;
             db.Activities.Add(new Activity { ProjectId = id, Kind = "project", Text = "프로젝트 정보를 수정했습니다." });
             await db.SaveChangesAsync();
-            var detail = (await DetailAsync(db, id))!;
+            var detail = (await DetailAsync(db, recipes, id))!;
             await ops.ProjectUpdated(detail.Project);
             return Results.Ok(detail);
         });
 
-        app.MapPost("/api/projects/{id:guid}/stage", async (OfnrDb db, IOpsNotifier ops, Guid id, StageInput input) =>
+        app.MapPost("/api/projects/{id:guid}/stage", async (OfnrDb db, RecipeCatalog recipes, IOpsNotifier ops, Guid id, StageInput input) =>
         {
             if (input.Stage is not { } stage || !Enum.IsDefined(stage)) return Error(400, "옮길 단계를 선택해 주세요.");
             if (await db.Projects.FindAsync(id) is not { } p) return ProjectNotFound();
@@ -162,8 +163,7 @@ public static class ProjectEndpoints
             }
             var dto = await DtoAsync(db, id);
             await ops.ProjectUpdated(dto);
-            // shortcut: name, engines and lock are placeholders until Task 4's RecipeCatalog can fill them.
-            var suggestions = StageSuggestions(stage).Select(r => new RecipeDto(r, r, stage, [], null, true)).ToArray();
+            var suggestions = StageSuggestions(stage).Select(recipes.Get).OfType<Recipe>().Select(RecipeDto.From).ToArray();
             return Results.Ok(new StageMoveDto(dto, suggestions, warnings));
         });
 
@@ -185,18 +185,14 @@ public static class ProjectEndpoints
             Open(settings.Current, logs.CreateLogger("Ofnr.Open"), input.Path));
     }
 
-    static async Task<ProjectDetailDto?> DetailAsync(OfnrDb db, Guid id)
+    static async Task<ProjectDetailDto?> DetailAsync(OfnrDb db, RecipeCatalog recipes, Guid id)
     {
         if (await db.Projects.Where(p => p.Id == id).ToDtos(db).SingleOrDefaultAsync() is not { } project) return null;
         var mails = await db.MailMessages.Where(m => m.ProjectId == id).OrderByDescending(m => m.ReceivedAt)
             .Select(m => new MailSummaryDto(m.Id, m.FromName, m.FromAddress, m.Subject, m.ReceivedAt, m.Status, m.Category, m.Summary,
                 m.ProjectId, project.JobNo, m.SuggestedProjectId, m.SuggestedConfidence, m.Attachments.Count > 0))
             .ToListAsync();
-        // shortcut: recipe name is the id until Task 4's RecipeCatalog exists.
-        var jobs = await db.Jobs.Where(j => j.ProjectId == id).OrderByDescending(j => j.CreatedAt)
-            .Select(j => new JobDto(j.Id, j.ProjectId, project.JobNo, j.RecipeId, j.RecipeId, j.Title, j.Engine, j.Status, j.CreatedAt, j.UpdatedAt,
-                db.JobRuns.Where(r => r.JobId == j.Id).Sum(r => r.CostUsd), j.Result == null ? null : j.Result.Summary))
-            .ToListAsync();
+        var jobs = await db.Jobs.Where(j => j.ProjectId == id).OrderByDescending(j => j.CreatedAt).ToDtosAsync(db, recipes);
         var artifacts = await db.Artifacts.Where(a => a.ProjectId == id).OrderBy(a => a.RelativePath)
             .Select(a => new ArtifactDto(a.Id, a.ProjectId, a.JobId, a.RelativePath, a.DocCode, a.Version, a.Status, a.Size, a.ModifiedAt))
             .ToListAsync();
@@ -265,5 +261,5 @@ public static class ProjectEndpoints
 
     static IResult ProjectNotFound() => Error(404, "프로젝트를 찾을 수 없습니다.");
 
-    static IResult Error(int status, string message) => Results.Json(new { error = message }, statusCode: status);
+    internal static IResult Error(int status, string message) => Results.Json(new { error = message }, statusCode: status);
 }

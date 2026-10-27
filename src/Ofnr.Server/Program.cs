@@ -6,6 +6,7 @@ using Microsoft.Extensions.FileProviders;
 using ModelContextProtocol.AspNetCore;
 using Npgsql;
 using Ofnr.Server;
+using Ofnr.Server.Agents;
 using Ofnr.Server.Data;
 using Ofnr.Server.Jobs;
 using Ofnr.Server.Mcp;
@@ -30,6 +31,13 @@ builder.Services.AddSingleton<IOpsNotifier, OpsNotifier>();
 builder.Services.AddDbContext<OfnrDb>((sp, o) => o.UseNpgsql(sp.GetRequiredService<SettingsStore>().Current.ConnectionString));
 builder.Services.AddSingleton<JobTokens>();
 builder.Services.AddScoped<Approvals>();
+// Loaded on first use, after Bootstrap has copied the shipped recipes.json into the data root.
+builder.Services.AddSingleton(sp => RecipeCatalog.Load(Path.Combine(sp.GetRequiredService<SettingsStore>().Current.DataRoot, "recipes.json")));
+builder.Services.AddSingleton<AgentFactory>();
+builder.Services.AddSingleton<JobRunner>();
+builder.Services.AddSingleton<JobQueue>();
+builder.Services.AddSingleton<IJobQueue>(sp => sp.GetRequiredService<JobQueue>());
+builder.Services.AddHostedService(sp => sp.GetRequiredService<JobQueue>());
 builder.Services.AddMcpServer()
     .WithHttpTransport(o => o.SessionMode = HttpServerSessionMode.Stateless)
     .WithTools<OfnrTools>();
@@ -47,6 +55,12 @@ catch (InvalidDataException e)
     return 1;
 }
 Bootstrap.EnsureDataRoot(settings.Current, AppContext.BaseDirectory);
+try { app.Services.GetRequiredService<RecipeCatalog>(); }
+catch (Exception e) when (e is InvalidDataException or IOException)
+{
+    Console.Error.WriteLine(e.Message);
+    return 1;
+}
 string? dbError = null;
 try
 {
@@ -73,6 +87,7 @@ app.Use(async (ctx, next) =>
 
 app.MapGet("/api/health", () => Health.Build(settings.Current, dbError));
 app.MapProjectEndpoints();
+app.MapJobEndpoints();
 app.MapHub<OpsHub>("/hubs/ops");
 app.UseWhen(ctx => ctx.Request.Path.StartsWithSegments("/mcp"), mcp => mcp.Use(JobTokens.Authenticate));
 app.MapMcp("/mcp");

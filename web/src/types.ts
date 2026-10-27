@@ -158,6 +158,8 @@ export interface RecipeDto {
   engines: Engine[];
   lock: string | null;
   needsProject: boolean;
+  /** Skill folder names under claude-plugin/skills. */
+  skills: string[];
 }
 
 export interface JobInput {

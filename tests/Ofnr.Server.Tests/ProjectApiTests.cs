@@ -188,7 +188,11 @@ public sealed class ProjectApiTests(TestHost host) : IClassFixture<TestHost>
         var id = p.GetProperty("id");
 
         var planning = await Send(HttpMethod.Post, $"/api/projects/{id}/stage", new { stage = "Planning" });
-        Assert.Equal(["proposal", "quote", "document"], planning.GetProperty("suggestions").EnumerateArray().Select(r => r.GetProperty("id").GetString()));
+        var suggested = planning.GetProperty("suggestions").EnumerateArray().ToList();
+        Assert.Equal(["proposal", "quote", "document"], suggested.Select(r => r.GetProperty("id").GetString()));
+        Assert.Equal(["제안서", "견적서", "문서"], suggested.Select(r => r.GetProperty("name").GetString()));
+        Assert.Equal(["quote"], suggested[1].GetProperty("skills").EnumerateArray().Select(x => x.GetString()));
+        Assert.Equal(["claude"], suggested[1].GetProperty("engines").EnumerateArray().Select(x => x.GetString()));
         Assert.Empty(planning.GetProperty("warnings").EnumerateArray());
 
         var design = await Send(HttpMethod.Post, $"/api/projects/{id}/stage", new { stage = "Design" });

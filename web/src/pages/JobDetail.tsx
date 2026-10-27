@@ -9,7 +9,7 @@ import { JobLog } from "../components/JobLog";
 import { Async, Confirm, ErrorBar, JobStatusBadge, Page, RouterLink, Section, useAction, useApi, useFlash, useUi } from "../components/ui";
 import { ENGINE, formatDate, formatTime, formatUsd } from "../format";
 import { useOps } from "../realtime";
-import type { JobDetailDto, ProjectDetailDto, SkillDto } from "../types";
+import type { JobDetailDto, ProjectDetailDto, RecipeDto } from "../types";
 
 const useStyles = makeStyles({
   meta: { display: "flex", alignItems: "center", gap: tokens.spacingHorizontalS, flexWrap: "wrap" },
@@ -27,7 +27,7 @@ export function JobDetail() {
   const detail = useApi<JobDetailDto>(`/api/jobs/${id}`);
   const projectId = detail.data?.job.projectId;
   const project = useApi<ProjectDetailDto>(projectId ? `/api/projects/${projectId}` : null);
-  const skills = useApi<SkillDto[]>("/api/skills");
+  const recipes = useApi<RecipeDto[]>("/api/recipes");
   const action = useAction();
   const [stopping, setStopping] = useState(false);
   const [followup, setFollowup] = useState<string>();
@@ -182,15 +182,15 @@ export function JobDetail() {
                   <Field label="스킬에 반영">
                     <Select value={skill} onChange={(_, d) => setSkill(d.value)}>
                       <option value="">반영 안 함</option>
-                      {(skills.data ?? []).map((k) => (
-                        <option key={k.name} value={k.name}>
-                          {k.name}
+                      {(recipes.data?.find((r) => r.id === job.recipeId)?.skills ?? []).map((k) => (
+                        <option key={k} value={k}>
+                          {k}
                         </option>
                       ))}
                     </Select>
                   </Field>
                 </div>
-                {skills.error && <ErrorBar message={skills.error} onRetry={skills.reload} />}
+                {recipes.error && <ErrorBar message={recipes.error} onRetry={recipes.reload} />}
                 {note && <Caption1 aria-live="polite">{note}</Caption1>}
                 <div className={ui.actions}>
                   <Button appearance="primary" disabled={action.busy} onClick={() => void sendFeedback()}>

@@ -43,7 +43,7 @@ public sealed class LocalAccessTests(TestHost host) : IClassFixture<TestHost>
 
         Assert.Equal(HttpStatusCode.Unauthorized, api.StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, hubWithout.StatusCode);
-        Assert.NotEqual(HttpStatusCode.Unauthorized, hubWith.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, hubWith.StatusCode);
     }
 
     [Fact]

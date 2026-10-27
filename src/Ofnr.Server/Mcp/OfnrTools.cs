@@ -19,7 +19,7 @@ namespace Ofnr.Server.Mcp;
 /// ids in tool arguments are never read. There is no send-mail tool: the AI only saves drafts.
 /// </summary>
 [McpServerToolType]
-public sealed class OfnrTools(OfnrDb db, Approvals approvals, IOpsNotifier notifier)
+public sealed class OfnrTools(OfnrDb db, Approvals approvals, IOpsNotifier notifier, RecipeCatalog recipes)
 {
     static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
     {
@@ -59,6 +59,8 @@ public sealed class OfnrTools(OfnrDb db, Approvals approvals, IOpsNotifier notif
     public async Task<string> GetMailThread(ClaimsPrincipal user, CancellationToken ct)
     {
         var job = await JobAsync(user, ct);
+        // Recipes whose MCP servers run scripts (SketchUp, Illustrator) never see mail text; the CLI flags block this tool too.
+        if (recipes.Get(job.RecipeId) is { UntrustedMailInPrompt: false }) return "이 작업에서는 메일을 읽을 수 없습니다.";
         if (job.MailId is not { } mailId) return "연결된 메일이 없습니다.";
         var linked = await db.MailMessages.AsNoTracking().SingleAsync(m => m.Id == mailId, ct);
         // A subject fallback key can match another client's mail, so it joins only mail of the same linked project.

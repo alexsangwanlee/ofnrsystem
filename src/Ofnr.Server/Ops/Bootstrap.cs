@@ -23,11 +23,21 @@ public static class Bootstrap
             if (!Directory.Exists(Path.Combine(o.PluginDir, ".git")) && !Git(o.PluginDir, "init")) return;
             // Checked on every start, not only after init, so a first commit that failed once is retried.
             if (Git(o.PluginDir, "rev-parse", "--verify", "--quiet", "HEAD")) return;
-            if (Git(o.PluginDir, "add", "-A"))
-                Git(o.PluginDir, "-c", "user.name=OFNR", "-c", "user.email=ofnr@localhost", "-c", "commit.gpgsign=false",
-                    "commit", "--no-verify", "-m", "기본 스킬");
+            GitCommit(o.PluginDir, "기본 스킬", ".");
         }
         catch (Win32Exception) { } // git is not on PATH; skill history stays off until it is installed
+    }
+
+    /// <summary>Commits every change under <paramref name="pathspec"/> in the plugin's git history. False when nothing changed or git is missing.</summary>
+    public static bool GitCommit(string dir, string message, string pathspec)
+    {
+        try
+        {
+            return Git(dir, "add", "-A", "--", pathspec)
+                && Git(dir, "-c", "user.name=OFNR", "-c", "user.email=ofnr@localhost", "-c", "commit.gpgsign=false",
+                    "commit", "--no-verify", "-m", message, "--", pathspec);
+        }
+        catch (Win32Exception) { return false; }
     }
 
     static void CopyTree(string src, string dst)

@@ -26,7 +26,8 @@ public sealed class CliRun
 
 public abstract class CliAgent(string name, string exe, string workDir, IReadOnlyList<string> extraArgs, IReadOnlyDictionary<string, string>? env) : AIAgent
 {
-    const string SessionKey = "cli.session_id";
+    /// <summary>Where the session state keeps the engine's session id (Claude session, Codex thread).</summary>
+    public const string SessionKey = "cli.session_id";
 
     // API keys would win over the subscription login; a parent Claude Code session leaks CLAUDECODE and CLAUDE_CODE_*.
     static readonly string[] StrippedEnv = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_PROFILE", "CODEX_API_KEY", "OPENAI_API_KEY", "CLAUDECODE"];

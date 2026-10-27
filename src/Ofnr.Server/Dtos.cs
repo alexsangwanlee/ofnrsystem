@@ -1,4 +1,5 @@
 using Ofnr.Server.Data;
+using Ofnr.Server.Jobs;
 
 namespace Ofnr.Server;
 
@@ -33,7 +34,10 @@ public sealed record FileDto(string RelativePath, long Size, DateTimeOffset Modi
 
 public sealed record OpenInput(string? Path);
 
-public sealed record RecipeDto(string Id, string Name, ProjectStage? Stage, string[] Engines, string? Lock, bool NeedsProject);
+public sealed record RecipeDto(string Id, string Name, ProjectStage? Stage, string[] Engines, string? Lock, bool NeedsProject, string[] Skills)
+{
+    public static RecipeDto From(Recipe r) => new(r.Id, r.Name, r.Stage, r.Engines, r.Lock, r.NeedsProject, r.Skills);
+}
 
 public sealed record ArtifactDto(
     Guid Id, Guid ProjectId, Guid? JobId, string RelativePath, string? DocCode, int Version, ArtifactStatus Status, long Size, DateTimeOffset ModifiedAt);
@@ -45,6 +49,27 @@ public sealed record JobDto(
     DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, decimal? CostUsd, string? Summary);
 
 public sealed record JobEventDto(long Id, Guid JobId, Guid RunId, int Seq, string Kind, string Summary, DateTimeOffset At);
+
+public sealed record JobInput(string? RecipeId, Guid? ProjectId, string? Instruction, string? Engine, Guid? MailId);
+
+public sealed record FollowupInput(string? Instruction);
+
+public sealed record FeedbackInput(string? Text, string? SkillName);
+
+public sealed record DecisionInput(string? Decision, string? Text);
+
+public sealed record RunDto(Guid Id, int Seq, RunStatus Status, string? EngineVersion, DateTimeOffset? StartedAt, DateTimeOffset? EndedAt, decimal? CostUsd, string? Error);
+
+public sealed record FeedbackDto(Guid Id, Guid JobId, string Text, string? SkillName, Guid? LearningJobId, DateTimeOffset CreatedAt)
+{
+    public static FeedbackDto From(Feedback f) => new(f.Id, f.JobId, f.Text, f.SkillName, f.LearningJobId, f.CreatedAt);
+}
+
+/// <param name="Result">The API Contract's JobResultDto, which has the entity's shape.</param>
+public sealed record JobDetailDto(
+    JobDto Job, List<RunDto> Runs, List<JobEventDto> Events, List<ApprovalDto> Approvals, List<ArtifactDto> Artifacts, List<FeedbackDto> Feedback, JobResult? Result);
+
+public sealed record LockDto(string Name, Guid? HolderJobId, int Waiting);
 
 public sealed record ApprovalDto(Guid Id, Guid JobId, string Kind, string Title, string Detail, ApprovalStatus Status, string? Decision, DateTimeOffset CreatedAt)
 {

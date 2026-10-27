@@ -381,13 +381,15 @@ describe("pages", () => {
     const calls = mockApi({
       "GET /api/jobs/j1": () => (loads++ === 0 ? detail : { ...detail, approvals: [] }),
       "GET /api/projects/p1": { project, mails: [], jobs: [], artifacts: [], activity: [] },
-      "GET /api/skills": [],
+      "GET /api/recipes": [{ id: "quote", name: "견적서", stage: "Planning", engines: ["claude"], lock: "office", needsProject: true, skills: ["quote"] }],
       "POST /api/approvals/a1/decide": { id: "a1", status: "Decided", decision: "respond" },
     });
     renderAt(<JobDetail />, "/jobs/j1", "/jobs/:id");
 
     const card = await screen.findByRole("article", { name: "확인 요청" });
     expect(within(card).getByText("AI 질문")).toBeTruthy();
+    // 스킬에 반영 offers the skills of the job's recipe.
+    expect(await screen.findByRole("option", { name: "quote" })).toBeTruthy();
     fireEvent.change(within(card).getByLabelText(/^답변/), { target: { value: "없습니다" } });
     fireEvent.click(within(card).getByRole("button", { name: "답변 보내기" }));
 
@@ -462,9 +464,9 @@ describe("pages", () => {
 
   it("NewJobDialog_hides_codex_for_claude_only_recipe", async () => {
     const recipes: RecipeDto[] = [
-      { id: "quote", name: "견적서", stage: "Planning", engines: ["claude", "codex"], lock: "office", needsProject: true },
-      { id: "model3d", name: "3D 모델", stage: "Design", engines: ["claude"], lock: "sketchup", needsProject: true },
-      { id: "free", name: "자유 지시", stage: null, engines: ["claude", "codex"], lock: null, needsProject: false },
+      { id: "quote", name: "견적서", stage: "Planning", engines: ["claude", "codex"], lock: "office", needsProject: true, skills: ["quote"] },
+      { id: "model3d", name: "3D 모델", stage: "Design", engines: ["claude"], lock: "sketchup", needsProject: true, skills: ["sketchup"] },
+      { id: "free", name: "자유 지시", stage: null, engines: ["claude", "codex"], lock: null, needsProject: false, skills: [] },
     ];
     mockApi({ "GET /api/recipes": recipes, "GET /api/settings": { defaultEngine: "codex" } });
     renderAt(<NewJobDialog open projectId="p1" stage="Design" onClose={() => undefined} />);
@@ -599,11 +601,11 @@ describe("pages", () => {
 
   it("NewJobDialog_reopens_with_the_chip_recipe_and_never_offers_skill_learning", async () => {
     const recipes: RecipeDto[] = [
-      { id: "quote", name: "견적서", stage: "Planning", engines: ["claude"], lock: "office", needsProject: true },
-      { id: "proposal", name: "제안서", stage: "Planning", engines: ["claude"], lock: "office", needsProject: true },
-      { id: "document", name: "문서", stage: "Planning", engines: ["claude"], lock: null, needsProject: true },
-      { id: "skill-learning", name: "스킬 학습", stage: null, engines: ["claude", "codex"], lock: null, needsProject: false },
-      { id: "free", name: "자유 지시", stage: null, engines: ["claude", "codex"], lock: null, needsProject: false },
+      { id: "quote", name: "견적서", stage: "Planning", engines: ["claude"], lock: "office", needsProject: true, skills: ["quote"] },
+      { id: "proposal", name: "제안서", stage: "Planning", engines: ["claude"], lock: "office", needsProject: true, skills: ["proposal"] },
+      { id: "document", name: "문서", stage: "Planning", engines: ["claude"], lock: null, needsProject: true, skills: ["document"] },
+      { id: "skill-learning", name: "스킬 학습", stage: null, engines: ["claude", "codex"], lock: null, needsProject: false, skills: ["skill-learning"] },
+      { id: "free", name: "자유 지시", stage: null, engines: ["claude", "codex"], lock: null, needsProject: false, skills: [] },
     ];
     mockApi({ "GET /api/recipes": recipes, "GET /api/settings": { defaultEngine: "claude" } });
     function Chips() {

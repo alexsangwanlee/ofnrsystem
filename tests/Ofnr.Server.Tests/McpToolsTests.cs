@@ -41,7 +41,7 @@ public sealed class McpToolsTests(TestHost host) : IClassFixture<TestHost>
                 mail,
                 Mail(n, 3, "<other-" + n + "@tnf.co.kr>", project, "다른 스레드 " + n));
         }
-        var job = new Job { Project = project, RecipeId = "reply", Title = "회신 초안", Mail = mail };
+        var job = new Job { Project = project, RecipeId = "reply", Title = "회신 초안", Mail = mail, Status = JobStatus.Running };
         var run = new JobRun { Job = job, Seq = 1, Status = RunStatus.Working };
         db.AddRange(project, job, run);
         db.Artifacts.Add(new Artifact { Project = project, RelativePath = "01_PLAN/T-" + n + "_QUOTE_v01.xlsx", DocCode = "QUOTE", Version = 1, ModifiedAt = DateTimeOffset.UtcNow });
@@ -173,6 +173,18 @@ public sealed class McpToolsTests(TestHost host) : IClassFixture<TestHost>
     }
 
     [Fact]
+    public async Task Get_mail_thread_refuses_recipes_that_keep_mail_out()
+    {
+        var s = await Seed();
+        using (var scope = host.Services.CreateScope())
+            await scope.ServiceProvider.GetRequiredService<OfnrDb>().Jobs.Where(j => j.Id == s.JobId)
+                .ExecuteUpdateAsync(x => x.SetProperty(j => j.RecipeId, "model3d"), Ct);
+        await using var client = await Connect(Tokens.Issue(s.JobId));
+
+        Assert.Equal("이 작업에서는 메일을 읽을 수 없습니다.", await Call(client, "get_mail_thread"));
+    }
+
+    [Fact]
     public async Task Get_mail_thread_keeps_unlinked_replies_and_drops_subject_matches_from_others()
     {
         var s = await Seed();
@@ -190,7 +202,7 @@ public sealed class McpToolsTests(TestHost host) : IClassFixture<TestHost>
             var stranger = Mail(n, 6, "subj:견적 요청 " + n, null, "남의 메일 " + n);
             stranger.FromAddress = "x@other.kr";
             db.MailMessages.AddRange(reply, subjectMail, stranger);
-            var job = new Job { RecipeId = "reply", Title = "회신 초안", Mail = subjectMail };
+            var job = new Job { RecipeId = "reply", Title = "회신 초안", Mail = subjectMail, Status = JobStatus.Running };
             db.Jobs.Add(job);
             await db.SaveChangesAsync(Ct);
             subjectJobId = job.Id;

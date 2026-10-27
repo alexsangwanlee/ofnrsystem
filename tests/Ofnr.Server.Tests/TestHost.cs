@@ -21,9 +21,12 @@ public sealed class TestHost : WebApplicationFactory<Program>
     public TestHost()
     {
         ClientOptions.BaseAddress = new Uri("http://127.0.0.1:47821");
-        // Keeps project folders inside the temp root even on a PC that has a D: drive.
-        File.WriteAllText(Path.Combine(DataRoot, "settings.json"),
-            JsonSerializer.Serialize(new { projectsRoot = Path.Combine(DataRoot, "Projects") }));
+        // Keeps project folders inside the temp root even on a PC that has a D: drive. A job that reaches the real
+        // agent factory fails to start its engine instead of calling a model.
+        File.WriteAllText(Path.Combine(DataRoot, "settings.json"), JsonSerializer.Serialize(new
+        {
+            projectsRoot = Path.Combine(DataRoot, "Projects"), claudeExe = Path.Combine(DataRoot, "no-claude"), codexExe = Path.Combine(DataRoot, "no-codex"),
+        }));
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
