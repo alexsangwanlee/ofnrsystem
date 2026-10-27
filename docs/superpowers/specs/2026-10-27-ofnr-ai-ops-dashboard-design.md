@@ -338,7 +338,8 @@ D:\OFNR\Projects\2026\OFNR-26031_TNF-Seongsu\
 ## 14. 설치, 업데이트, 백업, 유지보수
 
 - 설치: Tauri 설치 파일(NSIS) 하나. 첫 실행 점검 화면이 PostgreSQL, Claude Code, Codex, Git for Windows, MCP 서버 설치 상태를 확인하고 빠진 것을 안내한다. (PostgreSQL 설치 방식은 조사 확인 중)
-- 업데이트: Tauri Updater가 GitHub Releases에서 새 버전을 받는다. 빌드는 GitHub Actions의 Windows 러너가 한다.
+- 업데이트: Tauri Updater가 GitHub Releases(설치 파일만 올리는 공개 저장소)에서 새 버전을 받는다. 빌드는 GitHub Actions의 Windows 러너가 한다. 실행 중인 작업이 없을 때만 업데이트하고, 설치 직전에 서버를 끈다.
+- 코드 서명: 한국 법인은 Azure 서명 서비스를 쓸 수 없다. 1차는 서명 없이 대표 PC에 설치하고(처음 한 번 SmartScreen에서 "추가 정보 > 실행"), 직원 배포 전에 OV 코드 서명 인증서를 산다.
 - DB 마이그레이션: 서버 시작 시 자동 적용.
 - 백업: 매일 `pg_dump`로 DB를 백업 폴더에 남긴다(14일 보관). 프로젝트 폴더는 OneDrive나 NAS 동기화에 맡긴다.
 - 유지보수: 저장소의 `CLAUDE.md`에 구조와 규칙을 적어 둔다. 대표가 Claude Code로 저장소를 열면 바로 고칠 수 있다.
