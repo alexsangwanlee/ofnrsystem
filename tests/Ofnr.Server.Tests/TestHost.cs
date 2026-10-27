@@ -1,7 +1,9 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.EntityFrameworkCore;
 using Npgsql;
+using Ofnr.Server.Data;
 using Ofnr.Server.Security;
 
 namespace Ofnr.Server.Tests;
@@ -40,14 +42,36 @@ public sealed class TestHost : WebApplicationFactory<Program>
     public override async ValueTask DisposeAsync()
     {
         await base.DisposeAsync();
-        var admin = new NpgsqlConnectionStringBuilder(ServerConnection) { Database = "postgres" }.ConnectionString;
-        await using (var conn = new NpgsqlConnection(admin))
-        {
-            await conn.OpenAsync();
-            await using var cmd = new NpgsqlCommand($"DROP DATABASE IF EXISTS \"{DbName}\" WITH (FORCE)", conn);
-            await cmd.ExecuteNonQueryAsync();
-        }
+        TestDb.Drop(DbName);
         try { Directory.Delete(DataRoot, true); }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { } // git leaves read-only object files on Windows
+    }
+}
+
+/// <summary>A unique empty database <c>ofnr_t_&lt;8 hex&gt;</c>; <see cref="Create"/> also migrates it. Dropped on dispose.</summary>
+public sealed class TestDb : IDisposable
+{
+    public string DbName { get; } = "ofnr_t_" + Guid.NewGuid().ToString("N")[..8];
+    public string ConnectionString => new NpgsqlConnectionStringBuilder(TestHost.ServerConnection) { Database = DbName }.ConnectionString;
+
+    public static TestDb Create()
+    {
+        var t = new TestDb();
+        using var db = t.Context();
+        db.Database.Migrate();
+        return t;
+    }
+
+    public OfnrDb Context() => new(new DbContextOptionsBuilder<OfnrDb>().UseNpgsql(ConnectionString).Options);
+
+    public void Dispose() => Drop(DbName);
+
+    public static void Drop(string dbName)
+    {
+        var admin = new NpgsqlConnectionStringBuilder(TestHost.ServerConnection) { Database = "postgres" }.ConnectionString;
+        using var conn = new NpgsqlConnection(admin);
+        conn.Open();
+        using var cmd = new NpgsqlCommand($"DROP DATABASE IF EXISTS \"{dbName}\" WITH (FORCE)", conn);
+        cmd.ExecuteNonQuery();
     }
 }

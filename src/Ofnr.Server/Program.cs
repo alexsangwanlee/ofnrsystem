@@ -1,7 +1,9 @@
 using System.Net;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.FileProviders;
 using Ofnr.Server;
+using Ofnr.Server.Data;
 using Ofnr.Server.Ops;
 using Ofnr.Server.Security;
 
@@ -12,6 +14,7 @@ builder.Services.AddSingleton<SettingsStore>();
 builder.Services.AddOptions<KestrelServerOptions>()
     .Configure<SettingsStore>((kestrel, settings) => kestrel.Listen(IPAddress.Loopback, settings.Current.Port));
 builder.Services.AddLocalAccess();
+builder.Services.AddDbContext<OfnrDb>((sp, o) => o.UseNpgsql(sp.GetRequiredService<SettingsStore>().Current.ConnectionString));
 
 WebApplication app;
 SettingsStore settings;
@@ -26,6 +29,8 @@ catch (InvalidDataException e)
     return 1;
 }
 Bootstrap.EnsureDataRoot(settings.Current, AppContext.BaseDirectory);
+using (var scope = app.Services.CreateScope())
+    await scope.ServiceProvider.GetRequiredService<OfnrDb>().Database.MigrateAsync();
 
 app.UseLocalAccess();
 
