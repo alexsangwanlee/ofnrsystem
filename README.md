@@ -42,7 +42,8 @@ AI는 메일을 보내지 않습니다. 메일 발송은 언제나 대표가 보
 스크립트가 하는 일:
 
 - Git, Node.js, Python, uv, .NET SDK, Claude Code, Codex를 점검하고 없으면 설치합니다.
-- PostgreSQL 17을 설치합니다. 이때만 관리자 권한 확인 창이 뜹니다. 예를 눌러 주세요.
+- PostgreSQL 17을 설치합니다.
+- 빠진 프로그램(PostgreSQL, .NET SDK, Node.js, Git)을 설치하는 동안 Windows가 관리자 권한 확인 창을 띄울 수 있습니다. 예를 눌러 주세요.
 - `ofnr` 계정과 `ofnr_ops` 데이터베이스를 만들고 한글 검색이 되는지 확인합니다. 비밀번호는 Windows 암호화(DPAPI)로 `C:\OFNR\secrets`에 저장되고 설정 파일에는 들어가지 않습니다.
 - 엑셀, 파워포인트, 스케치업, 일러스트레이터, 포토샵 MCP 서버를 `C:\OFNR\tools`에 설치하고 `C:\OFNR\mcp.json`을 만듭니다. 버전은 모두 고정되어 있습니다.
 - 마지막에 직접 해 주셔야 하는 일을 보여 줍니다.

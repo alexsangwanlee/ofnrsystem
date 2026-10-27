@@ -4,7 +4,7 @@
   OFNR 운영 첫 설치 준비. 필요한 프로그램을 점검하고 빠진 것을 설치합니다.
 .DESCRIPTION
   여러 번 실행해도 안전합니다. 이미 있는 것은 건너뜁니다.
-  관리자 권한은 PostgreSQL을 새로 설치할 때만 필요합니다(Windows가 묻습니다).
+  빠진 프로그램(PostgreSQL, .NET SDK, Node.js, Git)을 설치할 때 Windows가 관리자 권한을 물을 수 있습니다. 예를 눌러 주세요.
   실행: powershell -ExecutionPolicy Bypass -File scripts\setup.ps1
 #>
 param(
@@ -23,6 +23,9 @@ function Ok($text) { Write-Host "  [확인] $text" -ForegroundColor Green }
 function Warn($text) { Write-Host "  [주의] $text" -ForegroundColor Yellow; $todo.Add($text) }
 
 function Has($name) { [bool](Get-Command $name -ErrorAction SilentlyContinue) }
+
+# An .exe first: for an npm install, Get-Command returns the .ps1 shim, which the server cannot start.
+function Exe($name) { (Get-Command "$name.exe", $name -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1).Source }
 
 # Claude Code's installer puts claude.exe in ~\.local\bin, which may not be on PATH yet.
 function Update-Path {
@@ -76,11 +79,12 @@ function Read-Secret($name) {
   $utf8.GetString([Security.Cryptography.ProtectedData]::Unprotect([IO.File]::ReadAllBytes($path), $null, 'CurrentUser'))
 }
 
+# SQL on stdin, not argv: other processes can read a command line, and one statement carries a password.
 function Psql($user, $password, $database, $sql) {
   $ErrorActionPreference = 'Continue'
   $env:PGPASSWORD = $password
   $env:PGCLIENTENCODING = 'UTF8'
-  try { & (Join-Path $pgBin 'psql.exe') -h 127.0.0.1 -p 5432 -U $user -d $database -v ON_ERROR_STOP=1 -tAc $sql 2>$null }
+  try { $sql | & (Join-Path $pgBin 'psql.exe') -h 127.0.0.1 -p 5432 -U $user -d $database -v ON_ERROR_STOP=1 -tA -f - 2>$null }
   finally { Remove-Item Env:PGPASSWORD -ErrorAction SilentlyContinue }
 }
 
@@ -137,7 +141,8 @@ if (-not (Test-Path (Join-Path $pgBin 'psql.exe'))) {
     Warn 'PostgreSQL에 관리자로 접속하지 못했습니다. 서비스가 켜져 있는지, 비밀번호가 맞는지 확인해 주세요.'
   } else {
     $verb = if ($roleExists) { 'ALTER' } else { 'CREATE' }
-    [void](Psql 'postgres' $super 'postgres' "$verb ROLE ofnr WITH LOGIN PASSWORD '$dbPassword'")
+    # panic: a failing statement is not written to the server log with its password.
+    [void](Psql 'postgres' $super 'postgres' "SET log_min_error_statement = panic; $verb ROLE ofnr WITH LOGIN PASSWORD '$dbPassword'")
     if ((Psql 'postgres' $super 'postgres' "SELECT 1 FROM pg_database WHERE datname = 'ofnr_ops'") -ne '1') {
       [void](Psql 'postgres' $super 'postgres' "CREATE DATABASE ofnr_ops OWNER ofnr ENCODING 'UTF8' LOCALE_PROVIDER icu ICU_LOCALE 'ko-KR' TEMPLATE template0")
     }
@@ -152,8 +157,13 @@ $settingsPath = Join-Path $DataRoot 'settings.json'
 $settings = if (Test-Path $settingsPath) { Get-Content $settingsPath -Raw -Encoding UTF8 | ConvertFrom-Json } else { New-Object PSObject }
 $values = @{ connectionString = 'Host=127.0.0.1;Port=5432;Database=ofnr_ops;Username=ofnr' }
 if (Test-Path (Join-Path $pgBin 'pg_dump.exe')) { $values.pgDumpPath = Join-Path $pgBin 'pg_dump.exe' }
-if (Has 'claude') { $values.claudeExe = (Get-Command claude).Source }
-if (Has 'codex') { $values.codexExe = (Get-Command codex).Source }
+if ($exe = Exe 'claude') { $values.claudeExe = $exe }
+if ($exe = Exe 'codex') { $values.codexExe = $exe }
+# Same first-run choice as the server, written now because the server pins it only when settings.json does not exist yet.
+if (-not $settings.projectsRoot) {
+  $d = New-Object IO.DriveInfo 'D'
+  $values.projectsRoot = if ($d.IsReady -and $d.DriveType -eq 'Fixed') { 'D:\OFNR\Projects' } else { Join-Path $DataRoot 'Projects' }
+}
 foreach ($key in $values.Keys) { $settings | Add-Member -NotePropertyName $key -NotePropertyValue $values[$key] -Force }
 Write-Json $settingsPath $settings
 Ok "설정 파일 $settingsPath"

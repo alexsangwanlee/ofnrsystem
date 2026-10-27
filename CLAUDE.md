@@ -50,14 +50,14 @@ Linux 개발 PC에서 .NET은 `export PATH=$HOME/.dotnet:$PATH`가 필요할 수
 | 서버 테스트 | `dotnet test` |
 | 화면 테스트 | `npm --prefix web test` |
 | 화면 빌드 (타입 검사 포함) | `npm --prefix web run build` |
-| 데스크톱 셸 점검 | `bash scripts/check-desktop.sh` (tauri.conf.json 모양, `cargo check`, Rust 테스트) |
+| 데스크톱 셸 점검 | `bash scripts/check-desktop.sh` (tauri.conf.json 모양, index.html의 `<style>`, 문서의 dash, `cargo check`, Rust 테스트) |
 | 개발 실행 (Linux) | `bash scripts/dev.sh` |
 | 개발 실행 (Windows 앱) | `scripts\publish-sidecar.ps1` 후 `npm --prefix desktop run tauri dev` |
 | 배포 | 버전을 올리고 `git tag vX.Y.Z && git push origin vX.Y.Z` (README의 업데이트 항목) |
 
 ## 규칙
 
-- 화면 문구, 스킬, 문서는 한국어. 화면 문구, 스킬, 문서, README 어디에도 em dash(U+2014)와 en dash(U+2013)를 쓰지 않는다. `web`의 테스트 `No_em_dash_in_source`가 검사한다.
+- 화면 문구, 스킬, 문서는 한국어. 화면 문구, 스킬, 문서, README 어디에도 em dash(U+2014)와 en dash(U+2013)를 쓰지 않는다. `web/src`는 테스트 `No_em_dash_in_source`가, README, CLAUDE.md, `claude-plugin/`은 `scripts/check-desktop.sh`가 검사한다.
 - 서버는 `127.0.0.1`에만 연다. `/api/*`, `/hubs/*`는 토큰(`X-Ofnr-Token` 헤더, SignalR 웹소켓만 `access_token` 쿼리)과 Host 검사를 거친다. `/mcp`는 작업별 토큰을 쓰고 화면 토큰은 쓰지 않는다.
 - 메일을 보내는 길은 `POST /api/mail/drafts/{id}/send` 하나뿐이고 사람이 누를 때만 탄다. AI에게 발송 도구를 주지 않는다.
 - `--bare`, `--dangerously-skip-permissions`, `bypassPermissions`, `danger-full-access`, `--dangerously-bypass-approvals-and-sandbox`를 쓰지 않는다.
@@ -69,6 +69,7 @@ Linux 개발 PC에서 .NET은 `export PATH=$HOME/.dotnet:$PATH`가 필요할 수
 - 단계 이름: Inquiry 문의, Planning 기획, Design 디자인, Production 제작, Operation 운영, Report 리포트, Done 완료.
 - 엔진 고정 버전: Claude Code `2.1.311`, Codex `0.164.0`. 다르면 경고만 한다.
 - Enter로 제출하는 입력은 한글 조합 중 Enter를 무시한다: `e.nativeEvent.isComposing || e.keyCode === 229`.
+- `web/index.html`에 `<style>`을 두지 않고 CSS는 `web/src/index.css`에 둔다. Tauri가 인라인 `<style>`에 CSP nonce를 붙이면 `'unsafe-inline'`이 꺼져 Fluent UI 스타일이 사라진다.
 - Tauri 창은 `dragDropEnabled: false`를 유지한다. 켜면 프로젝트 보드의 카드 끌기가 동작하지 않는다.
 - `src/`와 `tests/`는 경고를 오류로 처리한다. 가장 작은 변경으로 고치고, 고친 동작마다 테스트를 하나 둔다.
 

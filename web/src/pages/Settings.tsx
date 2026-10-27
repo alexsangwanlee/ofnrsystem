@@ -378,13 +378,17 @@ function AppSection() {
     });
   const install = (u: Update) =>
     void run(async () => {
-      // A job may have started since the check.
-      if ((await api<JobDto[]>("/api/jobs?status=Running")).length > 0) {
-        running.reload();
-        throw new Error("실행 중인 작업이 끝난 뒤에 업데이트해 주세요.");
-      }
+      // A job may start after the check or during the download, and stop_backend would kill it.
+      const ensureIdle = async () => {
+        if ((await api<JobDto[]>("/api/jobs?status=Running")).length > 0) {
+          running.reload();
+          throw new Error("실행 중인 작업이 끝난 뒤에 업데이트해 주세요.");
+        }
+      };
+      await ensureIdle();
       setNote("업데이트를 내려받는 중입니다. 잠시 뒤 설치 화면이 열립니다.");
       await step(u.download(), "업데이트를 내려받지 못했습니다. 잠시 후 다시 시도해 주세요.");
+      await ensureIdle();
       await step(invoke("stop_backend"), "서버를 멈추지 못했습니다. 앱을 다시 시작한 뒤 업데이트해 주세요.");
       await step(u.install(), "업데이트를 설치하지 못했습니다. 앱을 다시 시작해 주세요.");
     });

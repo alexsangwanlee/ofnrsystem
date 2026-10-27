@@ -558,12 +558,16 @@ describe("pages", () => {
       if (cmd === "autostart_enabled") return false;
       order.push(cmd);
     });
+    let running: JobDto[] = [];
+    let jobStartsDuringDownload = false;
     updater.check.mockResolvedValue({
       version: "0.2.0",
-      download: async () => void order.push("download"),
+      download: async () => {
+        order.push("download");
+        if (jobStartsDuringDownload) running = [job()];
+      },
       install: async () => void order.push("install"),
     });
-    let running: JobDto[] = [];
     mockApi({ "GET /api/settings": settingsDto, "GET /api/health": healthDto, "GET /api/jobs": () => running });
     renderAt(<Settings />);
 
@@ -578,12 +582,23 @@ describe("pages", () => {
     expect(await screen.findByText("실행 중인 작업이 끝난 뒤에 업데이트해 주세요.")).toBeTruthy();
     expect(order).toEqual([]);
 
-    await waitFor(() => expect((installButton as HTMLButtonElement).disabled).toBe(true));
-    running = [];
-    act(() => ops.last.jobUpdated?.(job({ status: "Done" })));
-    await waitFor(() => expect((installButton as HTMLButtonElement).disabled).toBe(false));
+    const finishJob = async () => {
+      await waitFor(() => expect((installButton as HTMLButtonElement).disabled).toBe(true));
+      running = [];
+      act(() => ops.last.jobUpdated?.(job({ status: "Done" })));
+      await waitFor(() => expect((installButton as HTMLButtonElement).disabled).toBe(false));
+    };
+    await finishJob();
+
+    jobStartsDuringDownload = true;
     fireEvent.click(installButton);
-    await waitFor(() => expect(order).toEqual(["download", "stop_backend", "install"]));
+    await waitFor(() => expect(order).toEqual(["download"]));
+    expect(await screen.findByText("실행 중인 작업이 끝난 뒤에 업데이트해 주세요.")).toBeTruthy();
+    await finishJob();
+
+    jobStartsDuringDownload = false;
+    fireEvent.click(installButton);
+    await waitFor(() => expect(order).toEqual(["download", "download", "stop_backend", "install"]));
   });
 
   it("ProjectForm_enter_that_commits_korean_ime_does_not_submit", async () => {

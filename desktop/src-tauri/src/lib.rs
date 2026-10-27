@@ -97,19 +97,29 @@ fn autostart_enabled(app: AppHandle) -> bool {
     app.autolaunch().is_enabled().unwrap_or(false)
 }
 
-fn start_sidecar(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+fn start_sidecar(app: &tauri::App) {
     let token: String = rand::random::<[u8; 32]>().iter().map(|b| format!("{b:02x}")).collect();
-    let (mut events, child) = app
-        .shell()
-        .sidecar("ofnr-server")?
-        .args(["--sidecar"])
-        // Env, not argv: other processes can read a command line.
-        .env("OFNR_TOKEN", &token)
-        .env("OFNR_CONTENT", app.path().resource_dir()?)
-        .set_process_group(true)
-        .spawn()?;
     let (ready, info) = watch::channel(None);
-    app.manage(Sidecar { token, child: Mutex::new(Some(child)), ready: Mutex::new(Some(ready)), info });
+    app.manage(Sidecar { token: token.clone(), child: Mutex::new(None), ready: Mutex::new(Some(ready)), info });
+    let spawn = || -> Result<_, Box<dyn std::error::Error>> {
+        Ok(app
+            .shell()
+            .sidecar("ofnr-server")?
+            .args(["--sidecar"])
+            // Env, not argv: other processes can read a command line.
+            .env("OFNR_TOKEN", &token)
+            .env("OFNR_CONTENT", app.path().resource_dir()?)
+            .set_process_group(true)
+            .spawn()?)
+    };
+    let (mut events, child) = match spawn() {
+        Ok(spawned) => spawned,
+        // A missing exe, or one the antivirus blocked: without this dialog a release build exits with no window.
+        Err(e) => {
+            return settle(app.handle(), Err(format!("백신 프로그램이 ofnr-server.exe를 막았는지 확인해 주세요.\n({e})")))
+        }
+    };
+    *app.state::<Sidecar>().child.lock().unwrap() = Some(child);
 
     let handle = app.handle().clone();
     // Keeps reading after OFNR_READY: the plugin's channel holds one event, so an unread one blocks the server's stdout.
@@ -133,7 +143,6 @@ fn start_sidecar(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         std::thread::sleep(READY_TIMEOUT);
         settle(&handle, Err("서버가 응답하지 않습니다.".into()));
     });
-    Ok(())
 }
 
 pub fn run() {
@@ -147,7 +156,7 @@ pub fn run() {
         .plugin(tauri_plugin_autostart::Builder::new().build())
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .setup(|app| {
-            start_sidecar(app)?;
+            start_sidecar(app);
             let open = MenuItem::with_id(app, "open", "열기", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "종료", true, None::<&str>)?;
             let mut tray = TrayIconBuilder::new()

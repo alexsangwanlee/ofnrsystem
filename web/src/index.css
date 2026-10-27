@@ -1,0 +1,19 @@
+/* A linked stylesheet, not an inline <style>: Tauri would give that a CSP nonce, which disables 'unsafe-inline' for Fluent UI's runtime styles. */
+@font-face {
+  font-family: "Pretendard Variable";
+  font-weight: 45 920;
+  font-style: normal;
+  font-display: swap;
+  src: url("/fonts/PretendardVariable.woff2") format("woff2");
+}
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+/* Korean breaks between words, not inside them. */
+body {
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}

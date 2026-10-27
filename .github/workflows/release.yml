@@ -56,7 +56,7 @@ jobs:
           releaseName: OFNR 운영 v__VERSION__
           releaseBody: OFNR 운영 v__VERSION__
           releaseDraft: false
-          includeUpdaterJson: true
+          # latest.json is uploaded by default (uploadUpdaterJson).
           updaterJsonPreferNsis: true
           # ASCII file names: GitHub renames non-ASCII asset names, which would break latest.json links.
-          assetNamePattern: ofnr-ops_[version]_[arch][setup][ext]
+          releaseAssetNamePattern: ofnr-ops_[version]_[arch][setup][ext]
