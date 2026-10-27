@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.FileProviders;
@@ -6,6 +7,8 @@ using Npgsql;
 using Ofnr.Server;
 using Ofnr.Server.Data;
 using Ofnr.Server.Ops;
+using Ofnr.Server.Projects;
+using Ofnr.Server.Realtime;
 using Ofnr.Server.Security;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -15,6 +18,9 @@ builder.Services.AddSingleton<SettingsStore>();
 builder.Services.AddOptions<KestrelServerOptions>()
     .Configure<SettingsStore>((kestrel, settings) => kestrel.Listen(IPAddress.Loopback, settings.Current.Port));
 builder.Services.AddLocalAccess();
+builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
+builder.Services.AddSignalR().AddJsonProtocol(o => o.PayloadSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
+builder.Services.AddSingleton<IOpsNotifier, OpsNotifier>();
 builder.Services.AddDbContext<OfnrDb>((sp, o) => o.UseNpgsql(sp.GetRequiredService<SettingsStore>().Current.ConnectionString));
 
 WebApplication app;
@@ -46,6 +52,8 @@ catch (NpgsqlException e)
 app.UseLocalAccess();
 
 app.MapGet("/api/health", () => Health.Build(settings.Current, dbError));
+app.MapProjectEndpoints();
+app.MapHub<OpsHub>("/hubs/ops");
 
 if (app.Configuration["OFNR_WEB_ROOT"] is { Length: > 0 } webRoot)
 {
