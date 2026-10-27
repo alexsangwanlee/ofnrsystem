@@ -46,9 +46,9 @@ public sealed class MailSync(IServiceScopeFactory scopes, SettingsStore settings
     readonly SemaphoreSlim gate = new(1, 1);
     CheckDto? last;
 
-    /// <summary>A sync failure first, then a triage failure.</summary>
+    /// <summary>A sync failure first, then a triage failure while AutoTriage is on (off, nothing triages again to clear it).</summary>
     public CheckDto Health => settings.Current.Mail.Address is not { Length: > 0 } ? new("메일", false, NotConfigured)
-        : last is { Ok: false } || triage.Failure is null ? last ?? new("메일", true, "첫 동기화를 기다리고 있습니다.")
+        : last is { Ok: false } || triage.Failure is null || !settings.Current.AutoTriage ? last ?? new("메일", true, "첫 동기화를 기다리고 있습니다.")
         : new("메일", false, triage.Failure);
 
     /// <summary>The setting, else the folder the server marks <c>\Sent</c>, else one named 보낸메일함 (NAVER WORKS) or Sent.</summary>

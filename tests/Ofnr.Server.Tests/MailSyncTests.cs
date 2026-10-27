@@ -206,6 +206,9 @@ public sealed class MailSyncTests
         Assert.Contains(rows.Single(m => !m.Outgoing).Id.ToString(), prompt);
         Assert.DoesNotContain(rows.Single(m => m.Outgoing).Id.ToString(), prompt);
         Assert.Equal(new CheckDto("메일", false, "메일 분류에 실패했습니다"), rig.Sync.Health);
+        // With AutoTriage off nothing would clear the failure.
+        rig.Settings.Current.AutoTriage = false;
+        Assert.True(rig.Sync.Health.Ok);
         await rig.Triage.StopAsync(Ct);
     }
 

@@ -35,14 +35,40 @@ public sealed partial class MailTriage(IServiceScopeFactory scopes, SettingsStor
         "triage_batch");
 
     static readonly string[] ClaudeArgs = ["--tools", "", "--strict-mcp-config", "--setting-sources", "user"];
-    static readonly string[] CodexArgs = ["--ignore-user-config", "-c", "sandbox_mode=\"read-only\""];
+    // The read-only sandbox only stops writes; these are the tools codex 0.164.0 exec otherwise offers the model (shell, images, apps, browser, web).
+    static readonly string[] CodexArgs = ["--ignore-user-config", "-c", "sandbox_mode=\"read-only\"", "-c", "features.shell_tool=false", "-c", "features.view_image=false",
+        "-c", "features.apps=false", "-c", "features.browser_use=false", "-c", "features.computer_use=false", "-c", "web_search=\"disabled\""];
 
     readonly Channel<IReadOnlyList<Guid>> queue = Channel.CreateUnbounded<IReadOnlyList<Guid>>();
 
     /// <summary><see cref="FailedMessage"/> after a run that failed, null after one that worked.</summary>
     public string? Failure { get; private set; }
 
+    /// <summary>How long one engine run may take. The queue has one consumer, so a stuck CLI would stop all later triage.</summary>
+    public TimeSpan RunTimeout { get; set; } = TimeSpan.FromMinutes(10);
+
     public void Queue(IReadOnlyList<Guid> mailIds) => queue.Writer.TryWrite(mailIds);
+
+    /// <summary>
+    /// The queue lives in memory, so incoming mail of the last 30 days still untriaged (queued when the server stopped, or failed) goes back in.
+    /// Runs before MailSync starts (registered after this), so new mail is not queued twice.
+    /// </summary>
+    public override async Task StartAsync(CancellationToken cancellationToken)
+    {
+        if (settings.Current.AutoTriage)
+        {
+            try
+            {
+                using var scope = scopes.CreateScope();
+                var since = DateTimeOffset.UtcNow.AddDays(-30);
+                var ids = await scope.ServiceProvider.GetRequiredService<OfnrDb>().MailMessages
+                    .Where(m => m.Category == null && !m.Outgoing && m.ReceivedAt >= since).OrderBy(m => m.ReceivedAt).Select(m => m.Id).ToListAsync(cancellationToken);
+                if (ids.Count > 0) Queue(ids);
+            }
+            catch (Exception e) when (e is not OperationCanceledException) { logger.LogWarning(e, "Untriaged mail could not be queued"); }
+        }
+        await base.StartAsync(cancellationToken);
+    }
 
     protected override async Task ExecuteAsync(CancellationToken stop)
     {
@@ -62,6 +88,10 @@ public sealed partial class MailTriage(IServiceScopeFactory scopes, SettingsStor
     public async Task TriageAsync(IReadOnlyList<Guid> mailIds, CancellationToken ct)
     {
         var o = settings.Current;
+        var codex = o.DefaultEngine == "codex";
+        var args = new List<string>(codex ? CodexArgs : ClaudeArgs);
+        // As for jobs (EngineInvocation); Codex's --ignore-user-config also drops the model in config.toml.
+        if ((codex ? o.CodexModel : o.ClaudeModel) is { Length: > 0 } model) args.AddRange([codex ? "-m" : "--model", model]);
         using var scope = scopes.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<OfnrDb>();
         var active = await db.Projects.AsNoTracking().Where(p => p.Status == ProjectStatus.Active)
@@ -84,8 +114,17 @@ public sealed partial class MailTriage(IServiceScopeFactory scopes, SettingsStor
                 prompt.AppendLine().AppendLine("아래 메일마다 items에 한 항목을 넣으세요. mail_id에는 untrusted_mail 태그의 id를, suggested_project_id에는 위 목록의 id만 쓰세요.");
                 foreach (var m in mails) prompt.AppendLine().Append(PromptBuilder.UntrustedMail(m, withId: true, bodyLimit: BodyLimit));
 
-                var agent = agents.Create(o.DefaultEngine, "mail-triage", Path.Combine(o.JobsRoot, "triage"), o.DefaultEngine == "codex" ? CodexArgs : ClaudeArgs);
-                var response = await agent.RunAsync(prompt.ToString(), options: new() { ResponseFormat = Format }, cancellationToken: ct);
+                var agent = agents.Create(o.DefaultEngine, "mail-triage", Path.Combine(o.JobsRoot, "triage"), args);
+                // A Codex job may hold the slot; waiting for it is not part of the time limit.
+                if (codex) await agents.CodexSlot.WaitAsync(ct);
+                AgentResponse response;
+                try
+                {
+                    using var limit = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                    limit.CancelAfter(RunTimeout);
+                    response = await agent.RunAsync(prompt.ToString(), options: new() { ResponseFormat = Format }, cancellationToken: limit.Token);
+                }
+                finally { if (codex) agents.CodexSlot.Release(); }
                 result = JsonSerializer.Deserialize<TriageBatch>(response.Text, Json) ?? throw new JsonException("빈 응답");
             }
             catch (Exception e) when (!ct.IsCancellationRequested)

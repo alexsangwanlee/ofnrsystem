@@ -48,6 +48,7 @@ public sealed class JobRunner(IServiceScopeFactory scopes, SettingsStore setting
         IReadOnlyDictionary<string, (long size, DateTime mtimeUtc)>? before = null;
         AIAgent? agent = null;
         AgentSession? session = null;
+        var codexHeld = false;
 
         // Kept as soon as the engine names its session, so a follow-up continues it after a failure, a cancel, a crash or a restart.
         async Task<bool> KeepSessionAsync()
@@ -70,6 +71,8 @@ public sealed class JobRunner(IServiceScopeFactory scopes, SettingsStore setting
         try
         {
             if (recipe is null) throw new InvalidOperationException($"작업 종류를 찾을 수 없습니다: {job.RecipeId}");
+            // Mail triage may be running Codex; waiting for it is not part of the time limit.
+            if (job.Engine == "codex") codexHeld = await agents.CodexSlot.WaitAsync(Timeout.Infinite, ct);
             limit.CancelAfter(TimeSpan.FromMinutes(recipe.TimeoutMinutes));
             var ctx = new JobContext(jobId, folder, job.Project?.JobNo, recipe, job.Engine, null);
             var (system, user) = PromptBuilder.Build(ctx, job.Project, job.Project?.Client, job.Mail, instruction, PromptBuilder.FindTemplate(o.TemplatesDir, recipe.DocCode));
@@ -147,6 +150,7 @@ public sealed class JobRunner(IServiceScopeFactory scopes, SettingsStore setting
         finally
         {
             tokens.Revoke(jobId);
+            if (codexHeld) agents.CodexSlot.Release();
         }
     }
 
