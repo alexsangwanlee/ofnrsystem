@@ -10,6 +10,7 @@
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.14" PrivateAssets="all" />
     <!-- Keeps EF Core at the Design tool's version in this project and in the tests. -->
     <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.14" />
+    <PackageReference Include="ModelContextProtocol.AspNetCore" Version="2.3.0" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
   </ItemGroup>
 

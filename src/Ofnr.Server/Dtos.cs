@@ -46,7 +46,10 @@ public sealed record JobDto(
 
 public sealed record JobEventDto(long Id, Guid JobId, Guid RunId, int Seq, string Kind, string Summary, DateTimeOffset At);
 
-public sealed record ApprovalDto(Guid Id, Guid JobId, string Kind, string Title, string Detail, ApprovalStatus Status, string? Decision, DateTimeOffset CreatedAt);
+public sealed record ApprovalDto(Guid Id, Guid JobId, string Kind, string Title, string Detail, ApprovalStatus Status, string? Decision, DateTimeOffset CreatedAt)
+{
+    public static ApprovalDto From(Approval a) => new(a.Id, a.JobId, a.Kind, a.Title, a.Detail, a.Status, a.Decision, a.CreatedAt);
+}
 
 public sealed record MailSummaryDto(
     Guid Id, string FromName, string FromAddress, string Subject, DateTimeOffset ReceivedAt, MailStatus Status, string? Category, string? Summary,

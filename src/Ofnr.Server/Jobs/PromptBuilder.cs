@@ -62,18 +62,23 @@ public static class PromptBuilder
             if (p.ContractAmount is { } contract) u.AppendLine($"- 계약 금액: {contract.ToString("N0", CultureInfo.InvariantCulture)}원");
             if (p.Instructions is { Length: > 0 } notes) u.AppendLine($"- 프로젝트 지침: {notes}");
         }
-        if (mail is not null && r.UntrustedMailInPrompt)
-        {
-            var body = mail.TextBody ?? "";
-            if (body.Length > MailBodyLimit) body = body[..MailBodyLimit] + "\n(이하 생략)";
-            u.AppendLine().AppendLine("<untrusted_mail>");
-            u.AppendLine(Defang($"보낸 사람: {mail.FromName} <{mail.FromAddress}>"));
-            u.AppendLine($"받은 시각: {mail.ReceivedAt.ToLocalTime():yyyy-MM-dd HH:mm}");
-            u.AppendLine(Defang($"제목: {mail.Subject}")).AppendLine();
-            u.AppendLine(Defang(body));
-            u.AppendLine("</untrusted_mail>");
-        }
+        if (mail is not null && r.UntrustedMailInPrompt) u.AppendLine().Append(UntrustedMail(mail));
         return (s.ToString(), u.ToString());
+    }
+
+    /// <summary>One mail inside <c>&lt;untrusted_mail&gt;</c> tags, body cut to 6000 chars. Also used by the get_mail_thread tool.</summary>
+    public static string UntrustedMail(MailMessage mail)
+    {
+        var body = mail.TextBody ?? "";
+        if (body.Length > MailBodyLimit) body = body[..MailBodyLimit] + "\n(이하 생략)";
+        return new StringBuilder()
+            .AppendLine("<untrusted_mail>")
+            .AppendLine(Defang($"보낸 사람: {mail.FromName} <{mail.FromAddress}>"))
+            .AppendLine($"받은 시각: {mail.ReceivedAt.ToLocalTime():yyyy-MM-dd HH:mm}")
+            .AppendLine(Defang($"제목: {mail.Subject}")).AppendLine()
+            .AppendLine(Defang(body))
+            .AppendLine("</untrusted_mail>")
+            .ToString();
     }
 
     // A mail must not close the untrusted block early and continue as if it were the CEO.

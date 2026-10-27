@@ -3,9 +3,12 @@ using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.FileProviders;
+using ModelContextProtocol.AspNetCore;
 using Npgsql;
 using Ofnr.Server;
 using Ofnr.Server.Data;
+using Ofnr.Server.Jobs;
+using Ofnr.Server.Mcp;
 using Ofnr.Server.Ops;
 using Ofnr.Server.Projects;
 using Ofnr.Server.Realtime;
@@ -25,6 +28,11 @@ builder.Services.AddSignalR().AddJsonProtocol(o => o.PayloadSerializerOptions.Co
 builder.Services.Configure<RouteHandlerOptions>(o => o.ThrowOnBadRequest = true);
 builder.Services.AddSingleton<IOpsNotifier, OpsNotifier>();
 builder.Services.AddDbContext<OfnrDb>((sp, o) => o.UseNpgsql(sp.GetRequiredService<SettingsStore>().Current.ConnectionString));
+builder.Services.AddSingleton<JobTokens>();
+builder.Services.AddScoped<Approvals>();
+builder.Services.AddMcpServer()
+    .WithHttpTransport(o => o.SessionMode = HttpServerSessionMode.Stateless)
+    .WithTools<OfnrTools>();
 
 WebApplication app;
 SettingsStore settings;
@@ -66,6 +74,8 @@ app.Use(async (ctx, next) =>
 app.MapGet("/api/health", () => Health.Build(settings.Current, dbError));
 app.MapProjectEndpoints();
 app.MapHub<OpsHub>("/hubs/ops");
+app.UseWhen(ctx => ctx.Request.Path.StartsWithSegments("/mcp"), mcp => mcp.Use(JobTokens.Authenticate));
+app.MapMcp("/mcp");
 
 if (app.Configuration["OFNR_WEB_ROOT"] is { Length: > 0 } webRoot)
 {
