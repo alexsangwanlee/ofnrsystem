@@ -22,6 +22,7 @@ description: 오프너로 들어온 메일을 분류하고 요약하고 핵심 �
 | contract_billing | 계약, 세금계산서, 정산, 입금 |
 | vendor | 시공, 제작, 인력, 장비 등 협력업체 메일 |
 | public_bid | 나라장터 등 공공 입찰, 공모 공고 |
+| ops_report | 행사 기간 중 현장 운영 보고, 현장 이슈 |
 | newsletter_spam | 광고, 뉴스레터, 스팸 |
 | other | 위에 없는 것 |
 
@@ -40,6 +41,7 @@ description: 오프너로 들어온 메일을 분류하고 요약하고 핵심 �
 - deadline: 회신이나 제출 마감
 - contact: 담당자 이름, 직함, 연락처
 - needs_reply: 회신이 필요한지 true/false
+- missing_fields: 견적이나 제안에 필요한데 메일에 없는 정보 목록 (예: 예산, 면적, 행사 기간). 회신 질문을 만들 때 쓴다.
 
 ## 프로젝트 추천
 
