@@ -1,4 +1,6 @@
 using System.Net;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Ofnr.Server.Security;
 
 namespace Ofnr.Server.Tests;
@@ -42,6 +44,13 @@ public sealed class LocalAccessTests(TestHost host) : IClassFixture<TestHost>
         Assert.Equal(HttpStatusCode.Unauthorized, api.StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, hubWithout.StatusCode);
         Assert.NotEqual(HttpStatusCode.Unauthorized, hubWith.StatusCode);
+    }
+
+    [Fact]
+    public void Request_logs_are_off_because_they_carry_the_hub_query_token()
+    {
+        var logger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Microsoft.AspNetCore.Hosting.Diagnostics");
+        Assert.False(logger.IsEnabled(LogLevel.Information));
     }
 
     [Fact]

@@ -10,7 +10,12 @@ public static class Health
         typeof(Health).Assembly.GetName().Version!.ToString(3),
         o.DataRoot,
         o.ProjectsRoot,
-        [AsciiPath("프로젝트 폴더", o.ProjectsRoot), AsciiPath("작업 폴더", o.JobsRoot)]);
+        [ProjectsFolder(o.ProjectsRoot), AsciiPath("작업 폴더", o.JobsRoot)]);
+
+    // Bootstrap lets the server start without this folder, so a missing drive shows up here.
+    static CheckDto ProjectsFolder(string path) => Directory.Exists(path)
+        ? AsciiPath("프로젝트 폴더", path)
+        : new("프로젝트 폴더", false, $"폴더를 만들 수 없습니다. 드라이브 연결을 확인하거나 설정에서 다른 폴더를 지정해 주세요: {path}");
 
     // The engine CLIs break on non-ASCII paths, so a Korean folder name is an error, not a warning.
     static CheckDto AsciiPath(string name, string path) => path.All(char.IsAscii)

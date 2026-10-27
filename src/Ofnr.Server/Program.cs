@@ -6,13 +6,25 @@ using Ofnr.Server.Ops;
 using Ofnr.Server.Security;
 
 var builder = WebApplication.CreateBuilder(args);
+// Request logs would print the SignalR ?access_token= query.
+builder.Logging.AddFilter("Microsoft.AspNetCore", LogLevel.Warning);
 builder.Services.AddSingleton<SettingsStore>();
 builder.Services.AddOptions<KestrelServerOptions>()
     .Configure<SettingsStore>((kestrel, settings) => kestrel.Listen(IPAddress.Loopback, settings.Current.Port));
 builder.Services.AddLocalAccess();
 
-var app = builder.Build();
-var settings = app.Services.GetRequiredService<SettingsStore>();
+WebApplication app;
+SettingsStore settings;
+try
+{
+    app = builder.Build(); // resolves SettingsStore for the Kestrel port
+    settings = app.Services.GetRequiredService<SettingsStore>();
+}
+catch (InvalidDataException e)
+{
+    Console.Error.WriteLine(e.Message);
+    return 1;
+}
 Bootstrap.EnsureDataRoot(settings.Current, AppContext.BaseDirectory);
 
 app.UseLocalAccess();
@@ -29,3 +41,4 @@ if (app.Configuration["OFNR_WEB_ROOT"] is { Length: > 0 } webRoot)
 
 app.Lifetime.ApplicationStarted.Register(() => Console.WriteLine($"OFNR listening http://127.0.0.1:{settings.Current.Port}"));
 app.Run();
+return 0;

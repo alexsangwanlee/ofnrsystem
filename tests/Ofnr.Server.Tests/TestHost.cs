@@ -27,6 +27,7 @@ public sealed class TestHost : WebApplicationFactory<Program>
     {
         builder.UseSetting("OFNR_DATA", DataRoot);
         builder.UseSetting("OFNR_DB", ConnectionString);
+        builder.UseSetting("OFNR_PORT", "47821");
     }
 
     public HttpClient Authed()

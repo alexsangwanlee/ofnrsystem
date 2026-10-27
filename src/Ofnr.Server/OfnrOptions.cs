@@ -38,11 +38,20 @@ public sealed class MailAccount
 /// <summary>Reads and writes <c>&lt;data&gt;/settings.json</c>; env OFNR_DATA, OFNR_PORT, OFNR_DB win over the file.</summary>
 public sealed class SettingsStore
 {
-    static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { WriteIndented = true };
+    static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
+    {
+        WriteIndented = true,
+        AllowTrailingCommas = true,
+        ReadCommentHandling = JsonCommentHandling.Skip,
+    };
+
+    static readonly SemaphoreSlim SaveLock = new(1, 1);
 
     readonly IConfiguration config;
     readonly string dataRoot;
     readonly string path;
+    int filePort;
+    string fileConnectionString;
 
     public SettingsStore(IConfiguration config)
     {
@@ -51,25 +60,58 @@ public sealed class SettingsStore
             : OperatingSystem.IsWindows() ? @"C:\OFNR"
             : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".ofnr"));
         path = Path.Combine(dataRoot, "settings.json");
-        Current = Apply(File.Exists(path) ? JsonSerializer.Deserialize<OfnrOptions>(File.ReadAllText(path), Json) ?? new() : new());
+        var fromFile = File.Exists(path) ? Load() : null;
+        var o = fromFile ?? new();
+        filePort = o.Port;
+        fileConnectionString = o.ConnectionString;
+        Current = Apply(o);
+        if (fromFile is null)
+        {
+            // Pins the first-run D: choice, so a drive that comes and goes cannot move the projects root.
+            Directory.CreateDirectory(dataRoot);
+            File.WriteAllText(path, JsonSerializer.Serialize(new { Current.ProjectsRoot }, Json));
+        }
     }
 
     public OfnrOptions Current { get; private set; }
 
     public async Task SaveAsync(OfnrOptions options)
     {
-        Directory.CreateDirectory(dataRoot);
-        var tmp = path + ".tmp";
-        await File.WriteAllTextAsync(tmp, JsonSerializer.Serialize(options, Json));
-        File.Move(tmp, path, overwrite: true);
-        Current = Apply(options);
+        await SaveLock.WaitAsync();
+        try
+        {
+            // Env overrides last for this run only, so the file keeps its own port and connection string.
+            if (config["OFNR_PORT"] is not { Length: > 0 }) filePort = options.Port;
+            if (config["OFNR_DB"] is not { Length: > 0 }) fileConnectionString = options.ConnectionString;
+            var json = JsonSerializer.SerializeToNode(options, Json)!;
+            json["port"] = filePort;
+            json["connectionString"] = fileConnectionString;
+            Directory.CreateDirectory(dataRoot);
+            var tmp = path + ".tmp";
+            await File.WriteAllTextAsync(tmp, json.ToJsonString(Json));
+            File.Move(tmp, path, overwrite: true);
+            Current = Apply(options);
+        }
+        finally
+        {
+            SaveLock.Release();
+        }
+    }
+
+    OfnrOptions Load()
+    {
+        try { return JsonSerializer.Deserialize<OfnrOptions>(File.ReadAllText(path), Json) ?? new(); }
+        catch (JsonException e) { throw new InvalidDataException($"settings.json 형식이 잘못되었습니다: {path}", e); }
     }
 
     OfnrOptions Apply(OfnrOptions o)
     {
         o.DataRoot = dataRoot;
+        // Only a fixed disk: a DVD, card reader or USB stick at D: comes and goes.
         if (string.IsNullOrWhiteSpace(o.ProjectsRoot))
-            o.ProjectsRoot = OperatingSystem.IsWindows() && Directory.Exists(@"D:\") ? @"D:\OFNR\Projects" : Path.Combine(dataRoot, "Projects");
+            o.ProjectsRoot = OperatingSystem.IsWindows() && new DriveInfo("D") is { IsReady: true, DriveType: DriveType.Fixed }
+                ? @"D:\OFNR\Projects"
+                : Path.Combine(dataRoot, "Projects");
         if (string.IsNullOrWhiteSpace(o.JobsRoot)) o.JobsRoot = Path.Combine(dataRoot, "jobs");
         if (string.IsNullOrWhiteSpace(o.PluginDir)) o.PluginDir = Path.Combine(dataRoot, "claude-plugin");
         if (string.IsNullOrWhiteSpace(o.TemplatesDir)) o.TemplatesDir = Path.Combine(dataRoot, "templates");
