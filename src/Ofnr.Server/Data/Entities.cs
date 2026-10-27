@@ -90,6 +90,7 @@ public sealed class MailMessage
     public JsonDocument? Extracted { get; set; }
     public Guid? SuggestedProjectId { get; set; }
     public double? SuggestedConfidence { get; set; }
+    public List<MailDraft> Drafts { get; set; } = [];
 }
 
 public sealed class MailAttachment

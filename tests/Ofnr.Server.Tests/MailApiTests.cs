@@ -142,10 +142,12 @@ public sealed class MailApiTests
         Assert.Equal((p.Id, "draft", "owner"), (draft.GetProperty("projectId").GetGuid(), draft.GetProperty("status").GetString(), draft.GetProperty("author").GetString()));
         var id = draft.GetProperty("id").GetGuid();
         Assert.Equal(id, (await h.Send(HttpMethod.Get, $"/api/mail/drafts?mailId={mail.Id}")).EnumerateArray().Single().GetProperty("id").GetGuid());
+        Assert.True((await h.Send(HttpMethod.Get, $"/api/mail/{mail.Id}")).GetProperty("hasDraft").GetBoolean());
 
         var sent = await h.Send(HttpMethod.Post, $"/api/mail/drafts/{id}/send");
 
         Assert.Equal("sent", sent.GetProperty("status").GetString());
+        Assert.False((await h.Send(HttpMethod.Get, "/api/mail")).EnumerateArray().Single(x => x.GetProperty("id").GetGuid() == mail.Id).GetProperty("hasDraft").GetBoolean());
         Assert.NotEqual(JsonValueKind.Null, sent.GetProperty("sentAt").ValueKind);
         var m = Assert.Single(smtp.Sent);
         Assert.Equal("m2@tnf.co.kr", m.InReplyTo);

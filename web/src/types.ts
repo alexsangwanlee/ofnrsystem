@@ -122,6 +122,7 @@ export interface MailSummaryDto {
   suggestedProjectId: string | null;
   suggestedConfidence: number | null;
   hasAttachments: boolean;
+  hasDraft: boolean;
 }
 export interface MailAttachmentDto { index: number; fileName: string; size: number }
 export interface MailDetailDto extends MailSummaryDto {

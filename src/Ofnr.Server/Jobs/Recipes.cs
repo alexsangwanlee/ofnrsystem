@@ -31,7 +31,8 @@ public sealed record ClaudeSettings
 {
     public string PermissionMode { get; init; } = "dontAsk";
     public string[] AllowedTools { get; init; } = ["Read", "Write", "Edit", "Glob", "Grep", "Skill", "TodoWrite", "mcp__ofnr__*"];
-    public string[] DisallowedTools { get; init; } = [];
+    // dontAsk still runs shell commands Claude Code deems read-only, and recipes read untrusted mail.
+    public string[] DisallowedTools { get; init; } = ["Bash"];
 }
 
 public sealed record CodexSettings

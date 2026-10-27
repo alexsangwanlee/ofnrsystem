@@ -32,6 +32,7 @@ import { ProjectForm, type ProjectSeed } from "../components/ProjectForm";
 import { Async, Confirm, ErrorBar, Page, RouterLink, Section, useAction, useApi, useUi, useValidation } from "../components/ui";
 import { MAIL_STATUS, formatDate, formatSize, formatTime } from "../format";
 import { useOps } from "../realtime";
+import { lightTheme } from "../theme";
 import type { DraftInput, FileDto, MailDetailDto, MailDraftDto, MailSummaryDto, ProjectDto } from "../types";
 
 const FILTERS: { value: string; label: string; query: string; keep?: (m: MailSummaryDto) => boolean }[] = [
@@ -89,7 +90,8 @@ const useStyles = makeStyles({
     display: "grid",
     gridTemplateColumns: "minmax(0, 1fr) 280px",
     gap: tokens.spacingHorizontalL,
-    "@media (max-width: 1279px)": { gridTemplateColumns: "minmax(0, 1fr)", alignContent: "start", overflowY: "auto" },
+    // Rows sized to their content: auto rows would share the pane's height and draw the reader over the AI panel.
+    "@media (max-width: 1279px)": { gridTemplateColumns: "minmax(0, 1fr)", gridAutoRows: "max-content", alignContent: "start", overflowY: "auto" },
   },
   // Below 1280px the AI panel stacks under the reader and the whole detail scrolls as one.
   reader: {
@@ -297,6 +299,11 @@ export function Mail() {
                             {m.summary ?? ""}
                           </Caption1>
                           {m.hasAttachments && <Attach16Regular aria-label="첨부 있음" />}
+                          {m.hasDraft && (
+                            <Badge appearance="tint" shape="rounded" size="small" color="informative">
+                              초안 있음
+                            </Badge>
+                          )}
                           {m.jobNo ? (
                             <Badge appearance="outline" shape="rounded" size="small">
                               {m.jobNo}
@@ -422,7 +429,13 @@ function MailReader({
               {save.error && <ErrorBar message={save.error} />}
               {m.htmlBody ? (
                 // sandbox="" blocks scripts, forms and navigation from the mail HTML.
-                <iframe sandbox="" srcDoc={m.htmlBody} title="메일 본문" className={s.frame} />
+                // The app's font, which the mail's own styles override; without it the frame falls back to a serif.
+                <iframe
+                  sandbox=""
+                  srcDoc={`<style>body{font-family:${lightTheme.fontFamilyBase}}</style>${m.htmlBody}`}
+                  title="메일 본문"
+                  className={s.frame}
+                />
               ) : (
                 <pre className={s.text}>{m.textBody ?? ""}</pre>
               )}

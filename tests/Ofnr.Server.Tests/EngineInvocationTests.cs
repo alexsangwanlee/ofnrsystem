@@ -63,7 +63,7 @@ public sealed class EngineInvocationTests : IDisposable
         Assert.Null(plan.SchemaPath);
         Assert.Equal(
             ["--plugin-dir", o.PluginDir, "--mcp-config", mcpPath, "--strict-mcp-config", "--permission-mode", "dontAsk",
-             "--allowedTools", "Read,Write,Edit,Glob,Grep,Skill,TodoWrite,mcp__ofnr__*,mcp__excel__*",
+             "--allowedTools", "Read,Write,Edit,Glob,Grep,Skill,TodoWrite,mcp__ofnr__*,mcp__excel__*", "--disallowedTools", "Bash",
              "--append-system-prompt", "시스템 지시", "--add-dir", Folder, "--model", "opus"],
             plan.ExtraArgs);
 
@@ -139,7 +139,7 @@ public sealed class EngineInvocationTests : IDisposable
         var args = EngineInvocation.Build(claude.Recipe, claude, o, "t", "s").ExtraArgs.ToArray();
         var c = ConfigValues(EngineInvocation.Build(codex.Recipe, codex, o, "t", "s"));
 
-        Assert.Equal("mcp__ofnr__get_mail_thread", args[Array.IndexOf(args, "--disallowedTools") + 1]);
+        Assert.Equal("Bash,mcp__ofnr__get_mail_thread", args[Array.IndexOf(args, "--disallowedTools") + 1]);
         Assert.Contains("mcp_servers.ofnr.disabled_tools=[\"get_mail_thread\"]", c);
     }
 

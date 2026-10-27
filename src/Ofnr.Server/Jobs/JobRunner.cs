@@ -120,7 +120,7 @@ public sealed class JobRunner(IServiceScopeFactory scopes, SettingsStore setting
                 if (await KeepSessionAsync()) await db.SaveChangesAsync(CancellationToken.None);
             }
 
-            job.Result = ParseResult(final.ToString());
+            job.Result = ParseResult(final.ToString(), folder);
             if (before is not null) await RegisterArtifactsAsync(db, job, recipe.DocCode, folder!, before);
             var unrecorded = recipe.Id == "skill-learning" && !await CommitLearningAsync(db, jobId);
             if (unrecorded) await Log("warning", "스킬 변경을 기록하지 못했습니다. 스킬 파일이 바뀌었는지 확인해 주세요.");
@@ -162,10 +162,10 @@ public sealed class JobRunner(IServiceScopeFactory scopes, SettingsStore setting
         var db = scope.ServiceProvider.GetRequiredService<OfnrDb>();
         var run = await db.JobRuns.Include(r => r.Job).Where(r => r.JobId == jobId && r.Status == RunStatus.Working).OrderByDescending(r => r.Seq).FirstOrDefaultAsync();
         if (run is null) return;
+        await JobEventLog.AppendAsync(db, notifier, jobId, run.Id, "error", $"작업이 실패했습니다: {reason}");
         (run.Status, run.Error, run.EndedAt) = (RunStatus.Failed, reason, DateTimeOffset.UtcNow);
         (run.Job.Status, run.Job.UpdatedAt) = (JobStatus.Failed, DateTimeOffset.UtcNow);
         await db.SaveChangesAsync();
-        await JobEventLog.AppendAsync(db, notifier, jobId, run.Id, "error", $"작업이 실패했습니다: {reason}");
         await notifier.JobUpdated(await JobEndpoints.DtoAsync(db, recipes, jobId));
     }
 
@@ -191,11 +191,11 @@ public sealed class JobRunner(IServiceScopeFactory scopes, SettingsStore setting
         var db = scope.ServiceProvider.GetRequiredService<OfnrDb>();
         var job = await db.Jobs.SingleAsync(j => j.Id == jobId);
         var runs = await db.JobRuns.Where(r => r.JobId == jobId).OrderBy(r => r.Seq).ToListAsync();
+        await Approvals.ExpirePendingAsync(db, jobId);
+        if (runs.Count > 0) await JobEventLog.AppendAsync(db, notifier, jobId, runs[^1].Id, "system", "작업을 중지했습니다.");
         foreach (var r in runs.Where(r => r.Status is RunStatus.Blocked or RunStatus.Working)) (r.Status, r.EndedAt) = (RunStatus.Stopped, DateTimeOffset.UtcNow);
         (job.Status, job.UpdatedAt) = (JobStatus.Canceled, DateTimeOffset.UtcNow);
         await db.SaveChangesAsync();
-        await Approvals.ExpirePendingAsync(db, jobId);
-        if (runs.Count > 0) await JobEventLog.AppendAsync(db, notifier, jobId, runs[^1].Id, "system", "작업을 중지했습니다.");
         await notifier.JobUpdated(await JobEndpoints.DtoAsync(db, recipes, jobId));
     }
 
@@ -206,10 +206,16 @@ public sealed class JobRunner(IServiceScopeFactory scopes, SettingsStore setting
         return latest is { Status: RunStatus.Blocked } ? latest : db.JobRuns.Add(new JobRun { JobId = jobId, Seq = (latest?.Seq ?? 0) + 1 }).Entity;
     }
 
-    static JobResult ParseResult(string text)
+    static JobResult ParseResult(string text, string? folder)
     {
-        try { return JsonSerializer.Deserialize<JobResult>(text, ResultJson) ?? new() { Summary = text }; }
+        JobResult result;
+        try { result = JsonSerializer.Deserialize<JobResult>(text, ResultJson) ?? new() { Summary = text }; }
         catch (JsonException) { return new() { Summary = text.Trim() }; } // an engine that ignored the result schema
+        // Engines report absolute paths; files in the project folder are listed relative to it, as artifacts are.
+        if (folder is not null)
+            result.Files = [.. result.Files.Select(f => Path.IsPathFullyQualified(f) && Path.GetRelativePath(folder, f) is var r && !Path.IsPathRooted(r)
+                && r != ".." && !r.StartsWith(".." + Path.DirectorySeparatorChar) ? r.Replace('\\', '/') : f)];
+        return result;
     }
 
     static string ArgSummary(string? json)

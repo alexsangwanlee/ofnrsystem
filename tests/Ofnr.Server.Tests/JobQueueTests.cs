@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using Microsoft.Agents.AI;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.AI;
@@ -176,6 +177,23 @@ public sealed class JobQueueTests
         Assert.Equal(5, detail.GetProperty("events").GetArrayLength());
         Assert.Equal("Done", Assert.Single(detail.GetProperty("runs").EnumerateArray()).GetProperty("status").GetString());
         Assert.Single(detail.GetProperty("artifacts").EnumerateArray());
+    }
+
+    [Fact]
+    public async Task Result_files_in_the_project_folder_are_listed_relative_to_it()
+    {
+        await using var h = new JobHost();
+        var p = await h.Project();
+        var inside = Path.Combine(p.Folder, "01_PLAN", $"{p.JobNo}_BRIEF_v01.md");
+        var outside = Path.Combine(h.DataRoot, "elsewhere.md");
+        h.Agents.Script = (call, ct) => FakeAgents.Default(call, ct).Select(u => u.Text == FakeAgents.Result
+            ? new AgentResponseUpdate(ChatRole.Assistant, JsonSerializer.Serialize(new { summary = "완료했습니다", files = new[] { inside, outside, "01_PLAN/x.md" } }))
+            : u);
+
+        var id = await h.Job("brief", p.Id);
+
+        var job = await h.WaitForStatus(id, JobStatus.Review);
+        Assert.Equal([$"01_PLAN/{p.JobNo}_BRIEF_v01.md", outside, "01_PLAN/x.md"], job.Result!.Files);
     }
 
     [Fact]
@@ -358,9 +376,8 @@ public sealed class JobQueueTests
         await h.WaitForStatus(id, JobStatus.Failed);
         var run = Assert.Single(await h.Runs(id));
         Assert.Equal((RunStatus.Failed, "연결이 끊겼습니다."), (run.Status, run.Error));
-        List<JobEvent> events = [];
-        await JobHost.WaitFor(async () => (events = await h.Events(id)).Any(e => e.Kind == "error"), () => "the error event, written after the status");
-        Assert.Equal(("error", "작업이 실패했습니다: 연결이 끊겼습니다."), (events[^1].Kind, events[^1].Summary));
+        // Logged before the status, so whoever sees Failed finds why.
+        Assert.Equal(("error", "작업이 실패했습니다: 연결이 끊겼습니다."), (await h.Events(id))[^1] is var e ? (e.Kind, e.Summary) : default);
     }
 
     [Fact]

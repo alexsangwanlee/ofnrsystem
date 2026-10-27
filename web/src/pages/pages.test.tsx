@@ -138,6 +138,7 @@ const mail: MailSummaryDto = {
   suggestedProjectId: null,
   suggestedConfidence: null,
   hasAttachments: false,
+  hasDraft: false,
 };
 
 const event = (id: number, kind: JobEventDto["kind"], summary: string, jobId = "j1"): JobEventDto => ({
@@ -252,7 +253,7 @@ describe("pages", () => {
     await screen.findByText("엑셀 파일을 수정할까요?");
     expect(screen.getByRole("group", { name: "확인 필요" }).textContent).toContain("3");
     expect(screen.getByRole("group", { name: "실행 중" }).textContent).toContain("1");
-    expect(screen.getByRole("group", { name: "이번 주 일정" }).textContent).toContain("2");
+    expect(screen.getByRole("group", { name: "7일 안 일정" }).textContent).toContain("2");
     for (const name of ["승인", "수정 후 승인", "답변", "무시", "결과 보기", "다시 보기", "프로젝트 연결"]) {
       expect(screen.getByRole("button", { name }), name).toBeTruthy();
     }
@@ -358,11 +359,14 @@ describe("pages", () => {
     expect(calls[1].body).toEqual({ decision: "ignore" });
   });
 
-  it("Question_card_without_body_text_shows_the_full_question_from_the_title", () => {
+  it("Question_card_shows_a_question_that_fits_the_title_once", () => {
     const title = "현장 사진이 없는데 도면 기준으로 설치 위치를 정해서 견적을 계속 진행해도 될까요?";
-    renderAt(<ApprovalCard item={{ kind: "approval", jobId: "j1", title, detail: "", approvalId: "a1", approvalKind: "question" }} />);
-    // One copy in the one-line title, one in the body that wraps.
-    expect(screen.getAllByText(title)).toHaveLength(2);
+    for (const detail of ["", JSON.stringify({ question: title, options: [] })]) {
+      renderAt(<ApprovalCard item={{ kind: "approval", jobId: "j1", title, detail, approvalId: "a1", approvalKind: "question" }} />);
+      // The title wraps instead of being cut, so it is the only copy.
+      expect(screen.getAllByText(title)).toHaveLength(1);
+      cleanup();
+    }
   });
 
   it("JobDetail_shows_pending_question_as_ai_question_and_confirms_the_answer", async () => {

@@ -18,7 +18,8 @@ public static class MailEndpoints
 
     public static IQueryable<MailSummaryDto> ToSummaries(this IQueryable<MailMessage> q) => q.Select(m => new MailSummaryDto(
         m.Id, m.FromName, m.FromAddress, m.Subject, m.ReceivedAt, m.Status, m.Category, m.Summary,
-        m.ProjectId, m.Project != null ? m.Project.JobNo : null, m.SuggestedProjectId, m.SuggestedConfidence, m.Attachments.Count > 0));
+        m.ProjectId, m.Project != null ? m.Project.JobNo : null, m.SuggestedProjectId, m.SuggestedConfidence, m.Attachments.Count > 0,
+        m.Drafts.Any(d => d.Status == "draft")));
 
     public static Task<MailSummaryDto> SummaryAsync(OfnrDb db, Guid id) => db.MailMessages.Where(m => m.Id == id).ToSummaries().SingleAsync();
 
@@ -47,7 +48,7 @@ public static class MailEndpoints
                 .OrderBy(x => x.ReceivedAt).ToSummaries().ToListAsync();
             return Results.Ok(new MailDetailDto(
                 m.Id, m.FromName, m.FromAddress, m.Subject, m.ReceivedAt, m.Status, m.Category, m.Summary, m.ProjectId, m.Project?.JobNo,
-                m.SuggestedProjectId, m.SuggestedConfidence, m.Attachments.Count > 0, m.To, m.Cc, m.TextBody, m.HtmlBody, m.Attachments,
+                m.SuggestedProjectId, m.SuggestedConfidence, m.Attachments.Count > 0, thread.Single(t => t.Id == id).HasDraft, m.To, m.Cc, m.TextBody, m.HtmlBody, m.Attachments,
                 m.Extracted?.RootElement ?? EmptyObject, thread));
         });
 

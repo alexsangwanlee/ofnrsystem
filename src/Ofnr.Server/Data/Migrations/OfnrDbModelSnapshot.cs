@@ -940,7 +940,7 @@ namespace Ofnr.Server.Data.Migrations
                         .HasConstraintName("fk_mail_drafts_projects_project_id");
 
                     b.HasOne("Ofnr.Server.Data.MailMessage", "ReplyToMail")
-                        .WithMany()
+                        .WithMany("Drafts")
                         .HasForeignKey("ReplyToMailId")
                         .HasConstraintName("fk_mail_drafts_mail_messages_reply_to_mail_id");
 
@@ -967,6 +967,11 @@ namespace Ofnr.Server.Data.Migrations
                         .HasConstraintName("fk_projects_clients_client_id");
 
                     b.Navigation("Client");
+                });
+
+            modelBuilder.Entity("Ofnr.Server.Data.MailMessage", b =>
+                {
+                    b.Navigation("Drafts");
                 });
 #pragma warning restore 612, 618
         }

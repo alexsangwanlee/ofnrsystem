@@ -51,7 +51,7 @@ export function Today() {
             <div className={ui.kpis}>
               <Kpi label="확인 필요" value={t.counts.attention} />
               <Kpi label="실행 중" value={t.counts.running} />
-              <Kpi label="이번 주 일정" value={t.counts.thisWeek} />
+              <Kpi label="7일 안 일정" value={t.counts.thisWeek} />
             </div>
             <div className={s.grid}>
               <Section title="확인 필요">

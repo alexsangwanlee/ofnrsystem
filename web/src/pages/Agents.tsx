@@ -25,8 +25,15 @@ function Empty({ title, body, to, label }: { title: string; body: string; to: st
 
 function JobRows({ jobs, empty }: { jobs: JobDto[]; empty: string }) {
   const ui = useUi();
+  // One quiet row: on this monitoring page, two full empty states would push the engines out of view.
   if (jobs.length === 0)
-    return <Empty title={empty} body="프로젝트나 메일에서 AI에게 작업을 맡기면 여기에 표시됩니다." to="/projects" label="프로젝트 보기" />;
+    return (
+      <ul className={ui.list}>
+        <li className={ui.row}>
+          <Body1 className={ui.muted}>{empty}</Body1>
+        </li>
+      </ul>
+    );
   return (
     <ul className={ui.list}>
       {jobs.map((j) => (
@@ -73,43 +80,6 @@ export function Agents() {
             </div>
             <div className={s.grid}>
               <div className={s.column}>
-                <Section title="실행 중">
-                  <JobRows jobs={a.running} empty="실행 중인 작업이 없습니다" />
-                </Section>
-                <Section title="대기">
-                  <JobRows jobs={a.queued} empty="대기 중인 작업이 없습니다" />
-                </Section>
-              </div>
-              <div className={s.column}>
-                <Section title="앱 잠금">
-                  {a.locks.length === 0 ? (
-                    <Empty
-                      title="앱 잠금이 없습니다"
-                      body="SketchUp, Illustrator, Office를 쓰는 작업이 실행되면 여기에 사용 상태가 표시됩니다."
-                      to="/projects"
-                      label="프로젝트 보기"
-                    />
-                  ) : (
-                    <ul className={ui.list}>
-                      {a.locks.map((l) => (
-                        <li key={l.name} className={ui.row}>
-                          <Body1 className={ui.grow}>
-                            <span>
-                              {lockLabel(l.name)}:{" "}
-                              {l.holderJobId ? (
-                                <RouterLink to={`/jobs/${l.holderJobId}`}>{`작업 #${l.holderJobId.slice(0, 8)}`}</RouterLink>
-                              ) : (
-                                "사용 가능"
-                              )}
-                              {l.holderJobId && " 사용 중"}
-                              {l.waiting > 0 && `, 대기 ${l.waiting}`}
-                            </span>
-                          </Body1>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </Section>
                 <Section title="엔진">
                   {check.error && <ErrorBar message={check.error} />}
                   {a.engines.length === 0 ? (
@@ -139,7 +109,7 @@ export function Agents() {
                               로그인 필요
                             </Badge>
                           )}
-                          {e.version && e.version !== e.pinned && (
+                          {e.version && e.version !== e.pinned && !e.detail?.includes(e.pinned) && (
                             <Badge appearance="tint" shape="rounded" color="warning">
                               고정 버전 {e.pinned}과 다름
                             </Badge>
@@ -147,6 +117,43 @@ export function Agents() {
                           <Button size="small" disabled={check.busy} onClick={() => runCheck(e.name)}>
                             점검
                           </Button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </Section>
+                <Section title="실행 중">
+                  <JobRows jobs={a.running} empty="실행 중인 작업이 없습니다." />
+                </Section>
+                <Section title="대기">
+                  <JobRows jobs={a.queued} empty="대기 중인 작업이 없습니다." />
+                </Section>
+              </div>
+              <div className={s.column}>
+                <Section title="앱 잠금">
+                  {a.locks.length === 0 ? (
+                    <Empty
+                      title="앱 잠금이 없습니다"
+                      body="SketchUp, Illustrator, Office를 쓰는 작업이 실행되면 여기에 사용 상태가 표시됩니다."
+                      to="/projects"
+                      label="프로젝트 보기"
+                    />
+                  ) : (
+                    <ul className={ui.list}>
+                      {a.locks.map((l) => (
+                        <li key={l.name} className={ui.row}>
+                          <Body1 className={ui.grow}>
+                            <span>
+                              {lockLabel(l.name)}:{" "}
+                              {l.holderJobId ? (
+                                <RouterLink to={`/jobs/${l.holderJobId}`}>{`작업 #${l.holderJobId.slice(0, 8)}`}</RouterLink>
+                              ) : (
+                                "사용 가능"
+                              )}
+                              {l.holderJobId && " 사용 중"}
+                              {l.waiting > 0 && `, 대기 ${l.waiting}`}
+                            </span>
+                          </Body1>
                         </li>
                       ))}
                     </ul>

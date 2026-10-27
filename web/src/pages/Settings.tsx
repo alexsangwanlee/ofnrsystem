@@ -34,7 +34,14 @@ const useStyles = makeStyles({
   nav: { position: "sticky", top: 0, display: "flex", flexDirection: "column", gap: tokens.spacingVerticalS },
   sections: { display: "flex", flexDirection: "column", gap: tokens.spacingVerticalXXL },
   form: { display: "flex", flexDirection: "column", gap: tokens.spacingVerticalM },
-  pair: { display: "grid", gridTemplateColumns: "minmax(0, 1fr) 120px", gap: tokens.spacingHorizontalM },
+  // Fluent's Input keeps its natural width (about 300px) unless the grid item and the input may shrink.
+  pair: {
+    display: "grid",
+    gridTemplateColumns: "minmax(0, 1fr) 120px",
+    gap: tokens.spacingHorizontalM,
+    "& > *": { minWidth: 0 },
+    "& .fui-Input": { minWidth: 0 },
+  },
   ok: { color: tokens.colorStatusSuccessForeground1, flexShrink: 0 },
   bad: { color: tokens.colorStatusDangerForeground1, flexShrink: 0 },
 });
@@ -316,8 +323,8 @@ function Health() {
         <Async state={health} rows={5}>
           {(h) => {
             const checks: { check: CheckDto; engine?: Engine }[] = [
-              { check: { ...h.db, name: `데이터베이스: ${h.db.name}` } },
-              { check: { ...h.mail, name: `메일: ${h.mail.name}` } },
+              { check: h.db },
+              { check: h.mail },
               ...h.engines.map((e) => ({
                 engine: e.name,
                 check: {

@@ -23,6 +23,7 @@ const CLOSED = "질문을 닫았습니다.";
 const useStyles = makeStyles({
   top: { display: "flex", alignItems: "center", gap: tokens.spacingHorizontalS, minWidth: 0 },
   detail: { whiteSpace: "pre-wrap", overflowWrap: "anywhere", color: tokens.colorNeutralForeground2 },
+  title: { minWidth: 0, overflowWrap: "anywhere" },
 });
 
 /** ask_ceo detail: JSON `{ question, options }`, or plain question text. */
@@ -51,8 +52,9 @@ export function ApprovalCard({ item, onDone }: { item: AttentionDto; onDone?: (m
   const [missing, setMissing] = useState(false);
   const approval = item.kind === "approval" && item.approvalId;
   const asked = approval && item.approvalKind === "question" ? parseQuestion(item.detail) : undefined;
-  // The title is cut to one line, so a question with no body text is repeated in full here.
-  const detail = asked ? asked.question || item.title : item.detail;
+  // A question that fits the title is shown once, wrapped; a longer one keeps a one-line title over the full text.
+  const question = asked && (asked.question || item.title);
+  const detail = asked ? (question !== item.title ? question : undefined) : item.detail;
 
   const decide = async (decision: Decision, answer?: string) => {
     const body = answer === undefined ? { decision } : { decision, text: answer };
@@ -73,7 +75,7 @@ export function ApprovalCard({ item, onDone }: { item: AttentionDto; onDone?: (m
         <Badge appearance="tint" shape="rounded" color={item.kind === "failed" ? "danger" : "warning"}>
           {asked ? "AI 질문" : KIND_LABEL[item.kind]}
         </Badge>
-        <Text weight="semibold" className={ui.ellipsis}>
+        <Text weight="semibold" className={detail ? ui.ellipsis : s.title}>
           {item.title}
         </Text>
       </div>
