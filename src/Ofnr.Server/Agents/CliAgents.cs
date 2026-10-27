@@ -275,7 +275,8 @@ public sealed class CodexAgent(string name, string exe, string workDir, IReadOnl
                 if (kind == "agent_message" && type == "item.completed")
                 {
                     run.FinalText = Str(item, "text"); // last one wins = final answer
-                    yield return Progress(run.FinalText);
+                    // The structured answer reaches the job as its result; as progress the log would show raw JSON.
+                    if (!run.Structured || run.FinalText?.TrimStart().StartsWith('{') != true) yield return Progress(run.FinalText);
                 }
                 else if (kind is "command_execution" or "mcp_tool_call" && type == "item.started")
                     yield return ToolCall(Str(item, "id"), kind == "mcp_tool_call" ? $"mcp__{Str(item, "server")}__{Str(item, "tool")}" : kind, item);

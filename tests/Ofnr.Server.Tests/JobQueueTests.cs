@@ -138,6 +138,8 @@ public sealed class JobQueueTests
         {
             File.WriteAllText(Path.Combine(plan, $"{p.JobNo}_BRIEF_v02.md"), "# 요구사항");
             File.WriteAllText(Path.Combine(plan, "메모.txt"), "버전 없는 파일");
+            File.WriteAllText(Path.Combine(plan, $"{p.JobNo}_DOC_v01.md"), "다른 작업의 문서");
+            File.WriteAllText(Path.Combine(plan, "OFNR-99999_BRIEF_v01.md"), "다른 프로젝트의 문서");
             return FakeAgents.Default(call, ct);
         };
 
@@ -174,6 +176,56 @@ public sealed class JobQueueTests
         Assert.Equal(5, detail.GetProperty("events").GetArrayLength());
         Assert.Equal("Done", Assert.Single(detail.GetProperty("runs").EnumerateArray()).GetProperty("status").GetString());
         Assert.Single(detail.GetProperty("artifacts").EnumerateArray());
+    }
+
+    [Fact]
+    public async Task Job_running_alongside_keeps_its_hands_off_the_other_jobs_artifact()
+    {
+        await using var h = new JobHost();
+        var p = await h.Project();
+        var release = new TaskCompletionSource();
+        async IAsyncEnumerable<AgentResponseUpdate> Waits(FakeCall call, [EnumeratorCancellation] CancellationToken ct = default)
+        {
+            await release.Task.WaitAsync(ct);
+            await foreach (var u in FakeAgents.Default(call, ct)) yield return u;
+        }
+        h.Agents.Script = (call, ct) =>
+        {
+            if (call.Prompt.Contains("자유 작업")) return Waits(call, ct);
+            File.WriteAllText(Path.Combine(p.Folder, "01_PLAN", $"{p.JobNo}_DOC_v01.md"), "계약서");
+            return FakeAgents.Default(call, ct);
+        };
+        // A recipe without a doc code, so only the owner check keeps it off the document job's file.
+        var free = await h.Job("free", p.Id, "자유 작업");
+        await JobHost.WaitFor(() => h.Agents.Active.Count == 1);
+        var document = await h.Job("document", p.Id, "계약서를 써 주세요");
+        await h.WaitForStatus(document, JobStatus.Review);
+
+        release.SetResult();
+
+        await h.WaitForStatus(free, JobStatus.Review);
+        await using var db = h.Db();
+        var a = Assert.Single(await db.Artifacts.Where(a => a.ProjectId == p.Id).ToListAsync(Ct));
+        Assert.Equal(($"01_PLAN/{p.JobNo}_DOC_v01.md", document), (a.RelativePath, a.JobId!.Value));
+    }
+
+    [Fact]
+    public async Task Failed_run_registers_the_drafts_it_wrote()
+    {
+        await using var h = new JobHost();
+        var p = await h.Project();
+        h.Agents.Script = (call, ct) =>
+        {
+            File.WriteAllText(Path.Combine(p.Folder, "01_PLAN", $"{p.JobNo}_BRIEF_v01.md"), "# 요구사항");
+            throw new InvalidOperationException("예산 한도를 넘었습니다");
+        };
+
+        var id = await h.Job("brief", p.Id);
+
+        await h.WaitForStatus(id, JobStatus.Failed);
+        await using var db = h.Db();
+        var a = Assert.Single(await db.Artifacts.Where(a => a.ProjectId == p.Id).ToListAsync(Ct));
+        Assert.Equal(($"01_PLAN/{p.JobNo}_BRIEF_v01.md", id, ArtifactStatus.Draft), (a.RelativePath, a.JobId!.Value, a.Status));
     }
 
     [Fact]
@@ -244,6 +296,72 @@ public sealed class JobQueueTests
     }
 
     [Fact]
+    public async Task Followup_to_a_blocked_run_keeps_the_request_it_held()
+    {
+        await using var h = new JobHost();
+        var p = await h.Project();
+        var id = await h.Job("brief", p.Id, "첫 지시");
+        await h.WaitForStatus(id, JobStatus.Review);
+        var config = Path.Combine(p.Folder, "CLAUDE.md");
+        File.WriteAllText(config, "x");
+        await h.Send(HttpMethod.Post, $"/api/jobs/{id}/followup", new { instruction = "색을 바꿔 주세요" });
+        await h.WaitForStatus(id, JobStatus.NeedsAttention);
+        File.Delete(config);
+
+        await h.Send(HttpMethod.Post, $"/api/jobs/{id}/followup", new { instruction = "설정 파일을 지웠습니다" });
+
+        await h.WaitForStatus(id, JobStatus.Review);
+        Assert.Equal(2, h.Agents.Calls.Count);
+        var call = h.Agents.Calls[1];
+        Assert.Equal("sess-" + id.ToString("N"), call.ResumedSession);
+        Assert.Contains("색을 바꿔 주세요", call.Prompt);
+        Assert.Contains("설정 파일을 지웠습니다", call.Prompt);
+        Assert.DoesNotContain("첫 지시", call.Prompt);
+    }
+
+    [Fact]
+    public async Task Restart_keeps_the_engine_session_of_an_interrupted_first_run()
+    {
+        await using var h = new JobHost();
+        var started = new TaskCompletionSource();
+        async IAsyncEnumerable<AgentResponseUpdate> Interrupted(FakeCall call, [EnumeratorCancellation] CancellationToken ct = default)
+        {
+            yield return new AgentResponseUpdate { Role = ChatRole.Assistant, AdditionalProperties = new() { ["cli.version"] = "2.1.311" } };
+            started.SetResult(); // the runner has handled the first update
+            await Task.Delay(Timeout.Infinite, ct);
+        }
+        h.Agents.Script = Interrupted;
+        var id = await h.Job("free", instruction: "첫 지시");
+        await started.Task.WaitAsync(Ct);
+        h.Agents.Script = null;
+
+        await h.RestartAsync();
+
+        Assert.Equal(JobStatus.NeedsAttention, (await h.Get(id)).Status);
+        var stopped = Assert.Single(await h.Runs(id));
+        Assert.Equal((RunStatus.Stopped, "sess-" + id.ToString("N")), (stopped.Status, stopped.SessionId));
+        await h.Send(HttpMethod.Post, $"/api/jobs/{id}/followup", new { instruction = "이어서 해 주세요" });
+        await h.WaitForStatus(id, JobStatus.Review);
+        Assert.Equal("sess-" + id.ToString("N"), h.Agents.Calls[1].ResumedSession);
+        Assert.Contains("이어서 해 주세요", h.Agents.Calls[1].Prompt);
+    }
+
+    [Fact]
+    public async Task Run_that_cannot_record_its_progress_ends_failed()
+    {
+        await using var h = new JobHost();
+        var failed = 0;
+        h.Notifier.FailOn = c => c is JobDto { Status: JobStatus.Running } && Interlocked.Exchange(ref failed, 1) == 0;
+
+        var id = await h.Job("free");
+
+        await h.WaitForStatus(id, JobStatus.Failed);
+        var run = Assert.Single(await h.Runs(id));
+        Assert.Equal((RunStatus.Failed, "연결이 끊겼습니다."), (run.Status, run.Error));
+        Assert.Equal(("error", "작업이 실패했습니다: 연결이 끊겼습니다."), (await h.Events(id))[^1] is var e ? (e.Kind, e.Summary) : default);
+    }
+
+    [Fact]
     public async Task Restart_marks_working_runs_stopped_and_requeues_queued()
     {
         await using var h = new JobHost();
@@ -273,15 +391,23 @@ public sealed class JobQueueTests
         Assert.Contains("대기 중이던 지시", Assert.Single(h.Agents.Calls).Prompt);
     }
 
+    /// <summary>What ask_ceo does: a question on the job's latest run.</summary>
+    static async Task<Guid> Ask(JobHost h, Guid jobId, string question, string[]? options = null)
+    {
+        using var scope = h.App.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<OfnrDb>();
+        var run = await db.JobRuns.Where(r => r.JobId == jobId).OrderByDescending(r => r.Seq).FirstAsync(Ct);
+        return (await scope.ServiceProvider.GetRequiredService<Approvals>().CreateQuestionAsync(jobId, run.Id, question, options)).Id;
+    }
+
     async Task<(Guid JobId, Guid ApprovalId)> AskedJob(JobHost h)
     {
-        async IAsyncEnumerable<AgentResponseUpdate> Ask(FakeCall call, [EnumeratorCancellation] CancellationToken ct = default)
+        async IAsyncEnumerable<AgentResponseUpdate> Asks(FakeCall call, [EnumeratorCancellation] CancellationToken ct = default)
         {
-            using (var scope = h.App.Services.CreateScope())
-                await scope.ServiceProvider.GetRequiredService<Approvals>().CreateQuestionAsync(call.JobId, null, "부스 크기는 3x3으로 할까요?", ["3x3", "6x3"]);
+            await Ask(h, call.JobId, "부스 크기는 3x3으로 할까요?", ["3x3", "6x3"]);
             await foreach (var u in FakeAgents.Default(call, ct)) yield return u;
         }
-        h.Agents.Script = Ask;
+        h.Agents.Script = Asks;
         var id = await h.Job("free", instruction: "부스 계획");
         await h.WaitForStatus(id, JobStatus.NeedsAttention);
         h.Agents.Script = null;
@@ -298,6 +424,24 @@ public sealed class JobQueueTests
 
         Assert.Equal(RunStatus.Done, Assert.Single(await h.Runs(id)).Status);
         Assert.Equal("완료했습니다", (await h.Get(id)).Result!.Summary);
+    }
+
+    [Fact]
+    public async Task Cancel_and_complete_expire_open_questions()
+    {
+        await using var h = new JobHost();
+        var (canceled, first) = await AskedJob(h);
+        var (completed, second) = await AskedJob(h);
+
+        await h.Send(HttpMethod.Post, $"/api/jobs/{canceled}/cancel");
+        await h.Send(HttpMethod.Post, $"/api/jobs/{completed}/complete");
+
+        await using (var db = h.Db())
+            Assert.Equal([ApprovalStatus.Expired, ApprovalStatus.Expired],
+                await db.Approvals.Where(a => a.Id == first || a.Id == second).Select(a => a.Status).ToListAsync(Ct));
+        await h.Send(HttpMethod.Post, $"/api/approvals/{first}/decide", new { decision = "respond", text = "6x3" }, HttpStatusCode.Conflict);
+        Assert.Equal(JobStatus.Canceled, (await h.Get(canceled)).Status);
+        Assert.Single(h.Agents.Calls, c => c.JobId == canceled);
     }
 
     [Fact]
@@ -325,16 +469,17 @@ public sealed class JobQueueTests
         h.Agents.Hold = true;
         await h.Send(HttpMethod.Post, $"/api/jobs/{id}/followup", new { instruction = "계속해 주세요" });
         await JobHost.WaitFor(() => h.Agents.Active.Count == 1);
-        Guid second;
-        using (var scope = h.App.Services.CreateScope())
-            second = (await scope.ServiceProvider.GetRequiredService<Approvals>().CreateQuestionAsync(id, null, "색은?", null)).Id;
+        var second = await Ask(h, id, "색은?");
 
         await h.Send(HttpMethod.Post, $"/api/approvals/{second}/decide", new { decision = "accept", text = "검정" });
 
         Assert.Equal(JobStatus.Running, (await h.Get(id)).Status);
         h.Agents.ReleaseAll();
         await JobHost.WaitFor(() => h.Agents.Calls.Count == 3);
-        await h.WaitForStatus(id, JobStatus.NeedsAttention); // the first question is still open
+        // The first question is still open, but it belongs to the first run, so the later runs end in review.
+        await h.WaitForStatus(id, JobStatus.Review);
         Assert.Contains("대표 답변: 검정", h.Agents.Calls[2].Prompt);
+        await using var db = h.Db();
+        Assert.Equal(1, await db.Approvals.CountAsync(a => a.JobId == id && a.Status == ApprovalStatus.Pending, Ct));
     }
 }

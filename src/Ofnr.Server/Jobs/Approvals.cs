@@ -27,6 +27,11 @@ public sealed class Approvals(OfnrDb db, IOpsNotifier notifier)
         return dto;
     }
 
+    /// <summary>A canceled or completed job takes no more answers, so its open questions stop asking (decide then gives 409).</summary>
+    public static Task ExpirePendingAsync(OfnrDb db, Guid jobId) =>
+        db.Approvals.Where(a => a.JobId == jobId && a.Status == ApprovalStatus.Pending)
+            .ExecuteUpdateAsync(s => s.SetProperty(a => a.Status, ApprovalStatus.Expired));
+
     /// <summary>Records the CEO's answer once.</summary>
     /// <exception cref="ArgumentException">Unknown decision, or edit/respond without text (400).</exception>
     /// <exception cref="KeyNotFoundException">No such approval (404).</exception>

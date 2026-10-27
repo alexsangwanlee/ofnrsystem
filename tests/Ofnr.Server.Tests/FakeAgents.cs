@@ -132,13 +132,26 @@ public sealed class JobHost : IAsyncDisposable
         var recipes = JsonNode.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "config", "recipes.json")))!.AsArray();
         recipes.Add(JsonNode.Parse("""{ "id": "slow", "name": "느린 작업", "engines": ["claude"], "needsProject": false, "timeoutMinutes": 0 }"""));
         File.WriteAllText(Path.Combine(DataRoot, "recipes.json"), recipes.ToJsonString());
-        App = host.WithWebHostBuilder(b => b.ConfigureTestServices(s => s.AddSingleton<AgentFactory>(Agents).AddSingleton<IOpsNotifier>(Notifier)));
-        _ = App.Services; // starts the server, which migrates the database
+        App = Start();
     }
 
     public FakeAgents Agents { get; } = new();
     public RecordingNotifier Notifier { get; } = new();
-    public WebApplicationFactory<Program> App { get; }
+    public WebApplicationFactory<Program> App { get; private set; }
+
+    WebApplicationFactory<Program> Start()
+    {
+        var app = host.WithWebHostBuilder(b => b.ConfigureTestServices(s => s.AddSingleton<AgentFactory>(Agents).AddSingleton<IOpsNotifier>(Notifier)));
+        _ = app.Services; // starts the server, which migrates the database
+        return app;
+    }
+
+    /// <summary>Stops the server the way closing the app does, then starts a new one on the same database and data folder.</summary>
+    public async Task RestartAsync()
+    {
+        await App.DisposeAsync();
+        App = Start();
+    }
     public string DataRoot => host.DataRoot;
 
     public OfnrDb Db() => new(new DbContextOptionsBuilder<OfnrDb>().UseNpgsql(host.ConnectionString).Options);

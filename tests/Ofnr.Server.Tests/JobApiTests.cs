@@ -70,6 +70,16 @@ public sealed class JobApiTests
         await h.Send(HttpMethod.Post, $"/api/jobs/{source}/feedback", new { text = " " }, HttpStatusCode.BadRequest);
         var detail = await h.Send(HttpMethod.Get, $"/api/jobs/{source}");
         Assert.Equal(["단가는 부가세 별도로 적어 주세요", "좋습니다"], detail.GetProperty("feedback").EnumerateArray().Select(x => x.GetProperty("text").GetString()));
+
+        // A learning run that leaves the skill file as it was is not done: nothing reached the skill history.
+        h.Agents.Script = null;
+        var unchanged = (await h.Send(HttpMethod.Post, $"/api/jobs/{source}/feedback", new { text = "표를 넓혀 주세요", skillName = "quote" }))
+            .GetProperty("learningJobId").GetGuid();
+        var git = Git(h.DataRoot, "--version") is not null;
+        await h.WaitForStatus(unchanged, git ? JobStatus.Review : JobStatus.Done);
+        if (git)
+            Assert.Contains(("warning", "스킬 변경을 기록하지 못했습니다. 스킬 파일이 바뀌었는지 확인해 주세요."),
+                (await h.Events(unchanged)).Select(e => (e.Kind, e.Summary)));
     }
 
     /// <summary>git's output, or null when git is not installed.</summary>

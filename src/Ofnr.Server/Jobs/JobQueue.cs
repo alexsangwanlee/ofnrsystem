@@ -219,7 +219,13 @@ public sealed class JobQueue(IServiceScopeFactory scopes, SettingsStore settings
         a.Task = Task.Run(async () =>
         {
             try { await runner.RunAsync(jobId, instruction, a.Cts.Token); }
-            catch (Exception e) { logger.LogError(e, "Job {JobId} could not record its end", jobId); }
+            catch (Exception e)
+            {
+                logger.LogError(e, "Job {JobId} could not record its end", jobId);
+                // Once more on a fresh connection, so the job does not show Running with no engine until the next start.
+                try { if (!stopping.IsCancellationRequested) await runner.FailAsync(jobId, e.Message); }
+                catch (Exception again) { logger.LogError(again, "Job {JobId} stays running until the next start", jobId); }
+            }
             await EndedAsync(jobId, a);
             a.Cts.Dispose();
         }, CancellationToken.None);
@@ -243,8 +249,10 @@ public sealed class JobQueue(IServiceScopeFactory scopes, SettingsStore settings
         using var scope = scopes.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<OfnrDb>();
         var job = await db.Jobs.SingleAsync(j => j.Id == jobId);
-        // Without an engine session the next run starts fresh, so the request it never got to work on stays in front.
-        job.Instruction = job.Status == JobStatus.Queued || job.EngineSession is null ? $"{job.Instruction}\n\n{instruction}".Trim() : instruction;
+        // The request the engine never got stays in front: no engine session yet, or the last run was held before its engine started.
+        var undelivered = job.Status == JobStatus.Queued || job.EngineSession is null
+            || await db.JobRuns.Where(r => r.JobId == jobId).OrderByDescending(r => r.Seq).Select(r => r.StartedAt).FirstOrDefaultAsync() is null;
+        job.Instruction = undelivered ? $"{job.Instruction}\n\n{instruction}".Trim() : instruction;
         (job.Status, job.UpdatedAt) = (JobStatus.Queued, DateTimeOffset.UtcNow);
         await db.SaveChangesAsync();
         await notifier.JobUpdated(await JobEndpoints.DtoAsync(db, recipes, jobId));

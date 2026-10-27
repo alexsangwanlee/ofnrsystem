@@ -92,6 +92,7 @@ public static partial class JobEndpoints
             await db.SaveChangesAsync();
             await db.Artifacts.Where(a => a.JobId == id && a.Status == ArtifactStatus.Draft)
                 .ExecuteUpdateAsync(s => s.SetProperty(a => a.Status, ArtifactStatus.InternalApproved));
+            await Approvals.ExpirePendingAsync(db, id);
             var dto = await DtoAsync(db, recipes, id);
             await ops.JobUpdated(dto);
             return Results.Ok(dto);

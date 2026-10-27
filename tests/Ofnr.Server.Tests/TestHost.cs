@@ -84,6 +84,9 @@ public sealed class RecordingNotifier : IOpsNotifier
 {
     readonly List<object> calls = [];
     public List<object> Calls { get { lock (calls) return [.. calls]; } }
+
+    /// <summary>Calls it matches throw, as a dropped connection would.</summary>
+    public Func<object, bool>? FailOn { get; set; }
     public Task JobUpdated(JobDto job) => Add(job);
     public Task JobEvent(JobEventDto e) => Add(e);
     public Task ApprovalRequested(ApprovalDto approval) => Add(("requested", approval));
@@ -91,5 +94,10 @@ public sealed class RecordingNotifier : IOpsNotifier
     public Task MailUpdated(MailSummaryDto mail) => Add(mail);
     public Task ProjectUpdated(ProjectDto project) => Add(project);
     public Task Notify(string title, string body, string? link) => Add((title, body, link));
-    Task Add(object call) { lock (calls) calls.Add(call); return Task.CompletedTask; }
+    Task Add(object call)
+    {
+        if (FailOn?.Invoke(call) == true) throw new InvalidOperationException("연결이 끊겼습니다.");
+        lock (calls) calls.Add(call);
+        return Task.CompletedTask;
+    }
 }

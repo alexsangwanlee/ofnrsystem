@@ -90,6 +90,8 @@ public sealed class CliAgentTests : IDisposable
         var updates = await Collect(Codex("error_events"), "x", options: ResultFormat());
 
         Assert.Equal(["Reconnecting... 1/5", "Reconnecting... 2/5"], Warnings(updates));
+        // The structured answer is the result only, not also a progress line in the job log.
+        Assert.Equal(Warnings(updates), updates.SelectMany(u => u.Contents.OfType<TextReasoningContent>()).Select(c => c.Text));
         var final = updates.Last().Contents.OfType<TextContent>().Single().Text;
         Assert.Equal("요구사항을 정리했습니다", JsonDocument.Parse(final).RootElement.GetProperty("summary").GetString());
         var schema = Path.Combine(dir, "schema.json");
