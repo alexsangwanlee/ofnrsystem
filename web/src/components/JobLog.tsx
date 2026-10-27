@@ -55,11 +55,11 @@ export function JobLog({ jobId, events }: { jobId: string; events: JobEventDto[]
     },
   });
 
-  // History and live events overlap after a reload, so keep one row per event id.
+  // History and live events overlap after a reload or reconnect; seq is unique within a run.
   const all = useMemo(() => {
-    const byId = new Map<number, JobEventDto>();
-    for (const e of [...events, ...live]) byId.set(e.id, e);
-    return [...byId.values()].sort((a, b) => a.id - b.id);
+    const bySeq = new Map<string, JobEventDto>();
+    for (const e of [...events, ...live]) bySeq.set(`${e.runId}:${e.seq}`, e);
+    return [...bySeq.values()].sort((a, b) => a.id - b.id);
   }, [events, live]);
 
   useLayoutEffect(() => {
@@ -80,7 +80,7 @@ export function JobLog({ jobId, events }: { jobId: string; events: JobEventDto[]
       {all.length === 0 && <span className={s.muted}>아직 기록이 없습니다. 작업이 시작되면 여기에 바로 표시됩니다.</span>}
       {all.map((e) =>
         e.kind === "tool" ? (
-          <details key={e.id} className={s.tool}>
+          <details key={`${e.runId}:${e.seq}`} className={s.tool}>
             <summary>
               <span className={s.time}>{formatTime(e.at)}</span> {toolName(e.summary)}
             </summary>
@@ -88,7 +88,7 @@ export function JobLog({ jobId, events }: { jobId: string; events: JobEventDto[]
           </details>
         ) : (
           <div
-            key={e.id}
+            key={`${e.runId}:${e.seq}`}
             className={mergeClasses(
               s.line,
               e.kind === "warning" && s.warning,

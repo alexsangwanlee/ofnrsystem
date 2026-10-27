@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { OpsHandlers } from "../realtime";
 import type {
   AgentsDto,
+  HealthDto,
   JobDto,
   JobEventDto,
   MailDetailDto,
@@ -35,6 +36,12 @@ vi.mock("../realtime", () => ({
   joinJob: ops.joinJob,
   leaveJob: async () => undefined,
 }));
+
+// Off by default; the update test turns Tauri on.
+const tauri = vi.hoisted(() => ({ on: false, invoke: vi.fn() }));
+vi.mock("@tauri-apps/api/core", () => ({ isTauri: () => tauri.on, invoke: tauri.invoke }));
+const updater = vi.hoisted(() => ({ check: vi.fn() }));
+vi.mock("@tauri-apps/plugin-updater", () => updater);
 
 // Fluent's MessageBar measures itself; jsdom has no ResizeObserver.
 globalThis.ResizeObserver ??= class {
@@ -184,9 +191,43 @@ async function openReply() {
   fireEvent.change(await screen.findByLabelText(/^본문/), { target: { value: "안녕하세요" } });
 }
 
+const settingsDto: SettingsDto = {
+  dataRoot: "C:/OFNR",
+  projectsRoot: "D:/OFNR/Projects",
+  jobsRoot: "C:/OFNR/jobs",
+  pluginDir: "C:/OFNR/claude-plugin",
+  templatesDir: "C:/OFNR/templates",
+  backupsDir: "C:/OFNR/backups",
+  port: 47821,
+  claudeExe: "claude",
+  codexExe: "codex",
+  defaultEngine: "claude",
+  maxConcurrentJobs: 2,
+  mailSyncMinutes: 5,
+  autoTriage: true,
+  appendSentCopy: true,
+  claudeModel: null,
+  codexModel: null,
+  pgDumpPath: "pg_dump",
+  mail: { address: "ceo@ofnr.co.kr", imapHost: "imap.worksmobile.com", imapPort: 993, smtpHost: "smtp.worksmobile.com", smtpPort: 465, sentFolder: null },
+};
+
+const ok = (name: string) => ({ name, ok: true, detail: null });
+const healthDto: HealthDto = {
+  version: "0.1.0",
+  dataRoot: "C:/OFNR",
+  projectsRoot: "D:/OFNR/Projects",
+  db: ok("ofnr_ops"),
+  mail: ok("ceo@ofnr.co.kr"),
+  engines: [{ name: "claude", path: "C:/claude.exe", version: "2.1.311", pinned: "2.1.311", ok: true, loggedIn: false, detail: null }],
+  mcp: [],
+  paths: [],
+};
+
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  tauri.on = false;
 });
 
 describe("pages", () => {
@@ -281,6 +322,8 @@ describe("pages", () => {
       ops.last.jobEvent?.(event(3, "warning", "요청이 많아 다시 시도합니다."));
       ops.last.jobEvent?.(event(4, "text", "다른 작업의 로그", "j2"));
       ops.last.jobEvent?.(event(2, "tool", 'mcp__ofnr__get_project {"id":"p1"}'));
+      // The same run and seq again, e.g. history reloaded after a reconnect.
+      ops.last.jobEvent?.({ ...event(2, "tool", 'mcp__ofnr__get_project {"id":"p1"}'), id: 99 });
     });
 
     expect(screen.getByText("견적 항목을 정리합니다.")).toBeTruthy();
@@ -476,27 +519,7 @@ describe("pages", () => {
   });
 
   it("Settings_rejects_empty_paths_and_bad_ports", async () => {
-    const settings: SettingsDto = {
-      dataRoot: "C:/OFNR",
-      projectsRoot: "D:/OFNR/Projects",
-      jobsRoot: "C:/OFNR/jobs",
-      pluginDir: "C:/OFNR/claude-plugin",
-      templatesDir: "C:/OFNR/templates",
-      backupsDir: "C:/OFNR/backups",
-      port: 47821,
-      claudeExe: "claude",
-      codexExe: "codex",
-      defaultEngine: "claude",
-      maxConcurrentJobs: 2,
-      mailSyncMinutes: 5,
-      autoTriage: true,
-      appendSentCopy: true,
-      claudeModel: null,
-      codexModel: null,
-      pgDumpPath: "pg_dump",
-      mail: { address: "ceo@ofnr.co.kr", imapHost: "imap.worksmobile.com", imapPort: 993, smtpHost: "smtp.worksmobile.com", smtpPort: 465, sentFolder: null },
-    };
-    const calls = mockApi({ "GET /api/settings": settings });
+    const calls = mockApi({ "GET /api/settings": settingsDto });
     renderAt(<Settings />);
 
     const templates = await screen.findByLabelText(/회사 양식 폴더/);
@@ -510,6 +533,67 @@ describe("pages", () => {
 
     fireEvent.click(screen.getAllByRole("button", { name: "변경 저장" })[0]);
     expect(calls.some((c) => c.method === "PUT")).toBe(false);
+  });
+
+  it("Settings_engine_check_updates_the_row", async () => {
+    const calls = mockApi({
+      "GET /api/settings": settingsDto,
+      "GET /api/health": healthDto,
+      "POST /api/health/engine-check/claude": { ...healthDto.engines[0], loggedIn: true },
+    });
+    renderAt(<Settings />);
+
+    expect(await screen.findByText("로그인이 필요합니다.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "엔진 점검" }));
+    await waitFor(() => expect(screen.queryByText("로그인이 필요합니다.")).toBeNull());
+    expect(screen.getByText("Claude Code 2.1.311")).toBeTruthy();
+    expect(calls.filter((c) => c.method === "POST").map((c) => c.path)).toEqual(["/api/health/engine-check/claude"]);
+  });
+
+  it("Settings_update_waits_for_running_jobs_and_stops_the_server_after_download", async () => {
+    tauri.on = true;
+    const order: string[] = [];
+    tauri.invoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "server_info") return { baseUrl: "", token: "t" };
+      if (cmd === "autostart_enabled") return false;
+      order.push(cmd);
+    });
+    updater.check.mockResolvedValue({
+      version: "0.2.0",
+      download: async () => void order.push("download"),
+      install: async () => void order.push("install"),
+    });
+    let running: JobDto[] = [];
+    mockApi({ "GET /api/settings": settingsDto, "GET /api/health": healthDto, "GET /api/jobs": () => running });
+    renderAt(<Settings />);
+
+    const checkButton = (await screen.findByRole("button", { name: "업데이트 확인" })) as HTMLButtonElement;
+    await waitFor(() => expect(checkButton.disabled).toBe(false));
+    fireEvent.click(checkButton);
+    const installButton = await screen.findByRole("button", { name: "지금 업데이트" });
+    expect(screen.getByText("새 버전 0.2.0이 있습니다.")).toBeTruthy();
+
+    running = [job()];
+    fireEvent.click(installButton);
+    expect(await screen.findByText("실행 중인 작업이 끝난 뒤에 업데이트해 주세요.")).toBeTruthy();
+    expect(order).toEqual([]);
+
+    await waitFor(() => expect((installButton as HTMLButtonElement).disabled).toBe(true));
+    running = [];
+    act(() => ops.last.jobUpdated?.(job({ status: "Done" })));
+    await waitFor(() => expect((installButton as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(installButton);
+    await waitFor(() => expect(order).toEqual(["download", "stop_backend", "install"]));
+  });
+
+  it("ProjectForm_enter_that_commits_korean_ime_does_not_submit", async () => {
+    mockApi({ "GET /api/clients": [] });
+    renderAt(<ProjectForm open title="새 프로젝트" seed={{ name: "성수" }} onClose={() => undefined} onSubmit={async () => undefined} />);
+
+    const name = await screen.findByLabelText(/프로젝트명/);
+    expect(fireEvent.keyDown(name, { key: "Enter", keyCode: 229 })).toBe(false);
+    expect(fireEvent.keyDown(name, { key: "Enter", isComposing: true })).toBe(false);
+    expect(fireEvent.keyDown(name, { key: "Enter", keyCode: 13 })).toBe(true);
   });
 
   it("No_em_dash_in_source", () => {

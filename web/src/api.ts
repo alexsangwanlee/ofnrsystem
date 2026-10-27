@@ -1,5 +1,5 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
-import type { ApiErrorBody } from "./types";
+import type { ApiErrorBody, Engine, EngineDto } from "./types";
 
 export interface ServerInfo { baseUrl: string; token: string }
 
@@ -63,3 +63,6 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
 }
+
+/** Runs a one-turn job that calls the dashboard MCP, so it catches login and MCP approval problems. */
+export const checkEngine = (engine: Engine) => api<EngineDto>(`/api/health/engine-check/${engine}`, { method: "POST" });

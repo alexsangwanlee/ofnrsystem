@@ -1,11 +1,11 @@
 import { useNavigate } from "react-router";
 import { Badge, Body1, Button, Caption1, makeStyles, tokens } from "@fluentui/react-components";
-import { api } from "../api";
+import { checkEngine } from "../api";
 import { EmptyState } from "../components/EmptyState";
 import { Async, ErrorBar, JobStatusBadge, Kpi, Page, RouterLink, Section, useAction, useApi, useUi } from "../components/ui";
 import { ENGINE, formatUsd, lockLabel } from "../format";
 import { useOps } from "../realtime";
-import type { AgentsDto, EngineDto, JobDto, RecipeDto } from "../types";
+import type { AgentsDto, Engine, JobDto, RecipeDto } from "../types";
 
 const useStyles = makeStyles({
   grid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(380px, 1fr))", gap: tokens.spacingHorizontalXL, alignItems: "start" },
@@ -55,9 +55,9 @@ export function Agents() {
   useOps({ jobUpdated: agents.reload, connected: agents.reload });
 
   const recipeName = (id: string) => recipes.data?.find((r) => r.id === id)?.name ?? id;
-  const runCheck = (name: string) =>
+  const runCheck = (name: Engine) =>
     void check.run(async () => {
-      const e = await api<EngineDto>(`/api/health/engine-check/${name}`, { method: "POST" });
+      const e = await checkEngine(name);
       agents.update((a) => ({ ...a, engines: a.engines.map((x) => (x.name === e.name ? e : x)) }));
     });
 
@@ -125,7 +125,7 @@ export function Agents() {
                         <li key={e.name} className={ui.row}>
                           <div className={ui.grow}>
                             <Body1>
-                              {e.name} {e.version ?? "버전 확인 불가"}
+                              {ENGINE[e.name]} {e.version ?? "버전 확인 불가"}
                             </Body1>
                             <Caption1 className={ui.muted}>{e.detail ?? e.path}</Caption1>
                           </div>

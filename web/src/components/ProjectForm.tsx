@@ -180,6 +180,10 @@ export function ProjectForm({
             e.preventDefault();
             submit();
           }}
+          onKeyDown={(e) => {
+            // This Enter only commits Korean IME composition; it must not submit the form.
+            if (e.key === "Enter" && (e.nativeEvent.isComposing || e.keyCode === 229)) e.preventDefault();
+          }}
         >
           <Field label="프로젝트명" required validationMessage={val.message("name")}>
             <Input {...field("name")} />

@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { invoke, isTauri } from "@tauri-apps/api/core";
+import type { Update } from "@tauri-apps/plugin-updater";
 import {
   Body1,
   Button,
@@ -13,16 +15,18 @@ import {
   tokens,
 } from "@fluentui/react-components";
 import { CheckmarkCircle20Filled, ErrorCircle20Filled } from "@fluentui/react-icons";
-import { api } from "../api";
+import { api, checkEngine } from "../api";
 import { Async, ErrorBar, Page, Section, useAction, useApi, useUi, useValidation } from "../components/ui";
 import { ENGINE } from "../format";
-import type { CheckDto, Engine, HealthDto, MailAccountDto, SettingsDto } from "../types";
+import { useOps } from "../realtime";
+import type { CheckDto, Engine, HealthDto, JobDto, MailAccountDto, SettingsDto } from "../types";
 
 const SECTIONS = [
   ["settings-paths", "작업 폴더"],
   ["settings-engine", "AI 엔진"],
   ["settings-mail", "메일"],
   ["settings-health", "상태 점검"],
+  ...(isTauri() ? ([["settings-app", "앱"]] as const) : []),
 ] as const;
 
 const useStyles = makeStyles({
@@ -57,6 +61,7 @@ export function Settings() {
             {(saved) => <SettingsForm saved={saved} onSaved={(d) => settings.update(() => d)} />}
           </Async>
           <Health />
+          {isTauri() && <AppSection />}
         </div>
       </div>
     </Page>
@@ -273,7 +278,7 @@ function MailPassword() {
   );
 }
 
-function CheckRow({ check }: { check: CheckDto }) {
+function CheckRow({ check, action }: { check: CheckDto; action?: ReactNode }) {
   const s = useStyles();
   const ui = useUi();
   return (
@@ -283,6 +288,7 @@ function CheckRow({ check }: { check: CheckDto }) {
         <Body1>{check.name}</Body1>
         {check.detail && <Caption1 className={ui.muted}>{check.detail}</Caption1>}
       </div>
+      {action}
     </div>
   );
 }
@@ -290,33 +296,132 @@ function CheckRow({ check }: { check: CheckDto }) {
 function Health() {
   const ui = useUi();
   const health = useApi<HealthDto>("/api/health");
+  const check = useAction();
+  const runCheck = (engine: Engine) =>
+    void check.run(async () => {
+      const e = await checkEngine(engine);
+      health.update((h) => ({ ...h, engines: h.engines.map((x) => (x.name === e.name ? e : x)) }));
+    });
   return (
     <div id="settings-health">
       <Section title="상태 점검" actions={<Button size="small" onClick={health.reload}>다시 점검</Button>}>
         <Async state={health} rows={5}>
           {(h) => {
-            const checks: CheckDto[] = [
-              { ...h.db, name: `데이터베이스: ${h.db.name}` },
-              { ...h.mail, name: `메일: ${h.mail.name}` },
+            const checks: { check: CheckDto; engine?: Engine }[] = [
+              { check: { ...h.db, name: `데이터베이스: ${h.db.name}` } },
+              { check: { ...h.mail, name: `메일: ${h.mail.name}` } },
               ...h.engines.map((e) => ({
-                name: `${e.name} ${e.version ?? ""}`.trim(),
-                ok: e.ok && e.loggedIn,
-                detail: e.detail ?? (e.loggedIn ? e.path : "로그인이 필요합니다."),
+                engine: e.name,
+                check: {
+                  name: `${ENGINE[e.name]} ${e.version ?? ""}`.trim(),
+                  ok: e.ok && e.loggedIn,
+                  detail: e.detail ?? (e.loggedIn ? e.path : "로그인이 필요합니다."),
+                },
               })),
-              ...h.mcp.map((c) => ({ ...c, name: `MCP: ${c.name}` })),
-              ...h.paths.map((c) => ({ ...c, name: `경로: ${c.name}` })),
+              ...h.mcp.map((c) => ({ check: { ...c, name: `MCP: ${c.name}` } })),
+              ...h.paths.map((c) => ({ check: { ...c, name: `경로: ${c.name}` } })),
             ];
             return (
-              <ul className={ui.list}>
-                {checks.map((c, i) => (
-                  <li key={i}>
-                    <CheckRow check={c} />
-                  </li>
-                ))}
-              </ul>
+              <>
+                {check.error && <ErrorBar message={check.error} />}
+                <ul className={ui.list}>
+                  {checks.map(({ check: c, engine }, i) => (
+                    <li key={i}>
+                      <CheckRow
+                        check={c}
+                        action={
+                          engine && (
+                            <Button size="small" disabled={check.busy} onClick={() => runCheck(engine)}>
+                              {check.busy ? "점검 중" : "엔진 점검"}
+                            </Button>
+                          )
+                        }
+                      />
+                    </li>
+                  ))}
+                </ul>
+              </>
             );
           }}
         </Async>
+      </Section>
+    </div>
+  );
+}
+
+/** Tauri only: updates and autostart. Stopping the server for an update would cut off a running job. */
+function AppSection() {
+  const ui = useUi();
+  const running = useApi<JobDto[]>("/api/jobs?status=Running");
+  useOps({ jobUpdated: running.reload, connected: running.reload });
+  const [update, setUpdate] = useState<Update | null>(null);
+  const [note, setNote] = useState<string>();
+  const [autostart, setAutostart] = useState<boolean>();
+  const { busy, error, run } = useAction();
+  const idle = running.data?.length === 0;
+
+  useEffect(() => {
+    invoke<boolean>("autostart_enabled").then(setAutostart, () => undefined);
+  }, []);
+
+  // Tauri rejects with plain strings, so each step names its own Korean message.
+  const step = <T,>(p: Promise<T>, message: string) =>
+    p.catch(() => {
+      throw new Error(message);
+    });
+  const checkUpdate = () =>
+    void run(async () => {
+      const { check } = await import("@tauri-apps/plugin-updater");
+      const u = await step(check(), "업데이트를 확인하지 못했습니다. 인터넷 연결을 확인한 뒤 다시 시도해 주세요.");
+      setUpdate(u);
+      setNote(u ? `새 버전 ${u.version}이 있습니다.` : "최신 버전을 쓰고 있습니다.");
+    });
+  const install = (u: Update) =>
+    void run(async () => {
+      // A job may have started since the check.
+      if ((await api<JobDto[]>("/api/jobs?status=Running")).length > 0) {
+        running.reload();
+        throw new Error("실행 중인 작업이 끝난 뒤에 업데이트해 주세요.");
+      }
+      setNote("업데이트를 내려받는 중입니다. 잠시 뒤 설치 화면이 열립니다.");
+      await step(u.download(), "업데이트를 내려받지 못했습니다. 잠시 후 다시 시도해 주세요.");
+      await step(invoke("stop_backend"), "서버를 멈추지 못했습니다. 앱을 다시 시작한 뒤 업데이트해 주세요.");
+      await step(u.install(), "업데이트를 설치하지 못했습니다. 앱을 다시 시작해 주세요.");
+    });
+  const toggleAutostart = (enabled: boolean) =>
+    void run(async () => {
+      await step(invoke("set_autostart", { enabled }), "자동 실행 설정을 바꾸지 못했습니다.");
+      setAutostart(enabled);
+    });
+
+  return (
+    <div id="settings-app">
+      <Section title="앱">
+        <div className={ui.section}>
+          <Switch
+            label="Windows에 로그인하면 자동으로 실행"
+            checked={autostart ?? false}
+            disabled={autostart === undefined || busy}
+            onChange={(_, d) => toggleAutostart(d.checked)}
+          />
+          <div className={ui.actions}>
+            {update ? (
+              <Button appearance="primary" disabled={busy || !idle} onClick={() => install(update)}>
+                지금 업데이트
+              </Button>
+            ) : (
+              <Button disabled={busy || !idle} onClick={checkUpdate}>
+                업데이트 확인
+              </Button>
+            )}
+            {note && <Caption1 aria-live="polite">{note}</Caption1>}
+          </div>
+          {!idle && running.data && (
+            <Caption1 className={ui.muted}>실행 중인 작업이 끝나면 업데이트할 수 있습니다.</Caption1>
+          )}
+          {running.error && <ErrorBar message={running.error} onRetry={running.reload} />}
+          {error && <ErrorBar message={error} />}
+        </div>
       </Section>
     </div>
   );

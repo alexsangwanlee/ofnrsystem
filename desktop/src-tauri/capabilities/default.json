@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Main window. Rust spawns the sidecar, so JS gets no shell permission; app commands need none.",
+  "windows": ["main"],
+  "permissions": ["core:default", "notification:default", "updater:default"]
+}

@@ -15,7 +15,8 @@ export interface ApiErrorBody { error: string }
 
 export interface CheckDto { name: string; ok: boolean; detail: string | null }
 export interface EngineDto {
-  name: string;
+  /** Also the {engine} segment of POST /api/health/engine-check/{engine}. */
+  name: Engine;
   path: string;
   version: string | null;
   /** Pinned version, e.g. "2.1.311". A different `version` is a warning. */

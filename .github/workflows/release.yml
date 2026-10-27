@@ -1,0 +1,62 @@
+# Builds the Windows installer and the updater files when a v* tag is pushed.
+# Assets go to a public, binaries-only repository so the updater can read releases/latest without credentials.
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  release:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            web/package-lock.json
+            desktop/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: 'desktop/src-tauri -> target'
+
+      - name: Install web and Tauri CLI
+        run: |
+          npm ci --prefix web
+          npm ci --prefix desktop
+
+      - name: Publish server sidecar
+        shell: pwsh
+        run: ./scripts/publish-sidecar.ps1
+
+      # beforeBuildCommand builds web/dist; the bundle version comes from desktop/src-tauri/tauri.conf.json.
+      - uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASES_PAT }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: desktop
+          owner: OWNER
+          repo: ofnr-ops-releases
+          releaseCommitish: main
+          tagName: v__VERSION__
+          releaseName: OFNR 운영 v__VERSION__
+          releaseBody: OFNR 운영 v__VERSION__
+          releaseDraft: false
+          includeUpdaterJson: true
+          updaterJsonPreferNsis: true
+          # ASCII file names: GitHub renames non-ASCII asset names, which would break latest.json links.
+          assetNamePattern: ofnr-ops_[version]_[arch][setup][ext]
