@@ -1,0 +1,8 @@
+bin/
+obj/
+.vs/
+*.user
+node_modules/
+web/dist/
+desktop/src-tauri/target/
+desktop/src-tauri/binaries/

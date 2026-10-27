@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <Version>0.1.0</Version>
+  </PropertyGroup>
+
+  <!-- Bootstrap copies these into the data root on first run. -->
+  <ItemGroup>
+    <None Include="../../config/**" LinkBase="config" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../claude-plugin/**" LinkBase="claude-plugin" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../templates/**" LinkBase="templates" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>
