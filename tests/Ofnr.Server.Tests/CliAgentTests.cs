@@ -22,9 +22,15 @@ public sealed class CliAgentTests : IDisposable
 
     Dictionary<string, string> Env(string scenario) => new() { ["FAKE_LOG"] = Log, ["FAKE_SCENARIO"] = scenario };
 
-    AIAgent Claude(string scenario = "ok") => new ClaudeCodeAgent("test", Path.Combine(Fakes, "fake-claude"), dir, [], Env(scenario));
+    static string Fake(string name)
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "The fake CLIs are bash scripts, which Windows cannot start.");
+        return Path.Combine(Fakes, name);
+    }
 
-    AIAgent Codex(string scenario = "ok") => new CodexAgent("test", Path.Combine(Fakes, "fake-codex"), dir, ["-C", dir], Env(scenario));
+    AIAgent Claude(string scenario = "ok") => new ClaudeCodeAgent("test", Fake("fake-claude"), dir, [], Env(scenario));
+
+    AIAgent Codex(string scenario = "ok") => new CodexAgent("test", Fake("fake-codex"), dir, ["-C", dir], Env(scenario));
 
     string[] Args() => File.ReadAllText(Log + ".args").TrimEnd('\0').Split('\0');
 
@@ -126,10 +132,12 @@ public sealed class CliAgentTests : IDisposable
         var saved = leaked.ToDictionary(k => k, Environment.GetEnvironmentVariable);
         var config = new ConfigurationBuilder().AddInMemoryCollection([new("OFNR_DATA", Path.Combine(dir, "data"))]).Build();
         var settings = new SettingsStore(config);
-        settings.Current.ClaudeExe = Path.Combine(Fakes, "fake-claude");
+        settings.Current.ClaudeExe = Fake("fake-claude");
+        var gitBash = Environment.GetEnvironmentVariable("CLAUDE_CODE_GIT_BASH_PATH");
         try
         {
             foreach (var k in leaked) Environment.SetEnvironmentVariable(k, "leak");
+            Environment.SetEnvironmentVariable("CLAUDE_CODE_GIT_BASH_PATH", @"D:\Git\bin\bash.exe");
             var env = new Dictionary<string, string>(Env("ok")) { ["OFNR_JOB_TOKEN"] = "tok", ["CLAUDE_CODE_MCP_AUTO_BACKGROUND_MS"] = "0" };
 
             await new AgentFactory(settings).Create("claude", "test", dir, [], env).RunAsync("x", cancellationToken: Ct);
@@ -137,12 +145,14 @@ public sealed class CliAgentTests : IDisposable
         finally
         {
             foreach (var (k, v) in saved) Environment.SetEnvironmentVariable(k, v);
+            Environment.SetEnvironmentVariable("CLAUDE_CODE_GIT_BASH_PATH", gitBash);
         }
 
         var child = ChildEnv();
         Assert.DoesNotContain(child.Keys, leaked.Contains);
         Assert.Equal("0", child["CLAUDE_CODE_MCP_AUTO_BACKGROUND_MS"]);
         Assert.Equal("tok", child["OFNR_JOB_TOKEN"]);
+        Assert.Equal(@"D:\Git\bin\bash.exe", child["CLAUDE_CODE_GIT_BASH_PATH"]);
         Assert.Equal(Path.Combine(dir, "data", "tmp"), child["TEMP"]);
         Assert.Equal(Path.Combine(dir, "data", "tmp"), child["TMP"]);
     }
@@ -187,5 +197,30 @@ public sealed class CliAgentTests : IDisposable
 
         Assert.Equal("2.1.311", updates[0].AdditionalProperties?["cli.version"]);
         Assert.Contains(Warnings(updates), w => w.Contains("Bash"));
+    }
+
+    [Fact]
+    public async Task Leftover_child_holding_the_pipes_does_not_hold_up_the_run()
+    {
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(Ct);
+        cts.CancelAfter(TimeSpan.FromSeconds(15)); // the leftover holds both pipes for 20 seconds
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+
+        var response = await Claude("leftover").RunAsync("x", cancellationToken: cts.Token);
+
+        Assert.Equal("done", response.Text);
+        Assert.InRange(clock.Elapsed, TimeSpan.Zero, TimeSpan.FromSeconds(10));
+    }
+
+    [Fact]
+    public async Task Malformed_lines_become_warnings()
+    {
+        var claude = await Collect(Claude("bad_json"), "x");
+        var codex = await Collect(Codex("bad_json"), "x", options: ResultFormat());
+
+        Assert.Contains(Warnings(claude), w => w.StartsWith("엔진 출력 한 줄을 읽지 못했습니다: {\"type\":\"system\""));
+        Assert.Equal("done", claude.Last().Text);
+        Assert.Contains(Warnings(codex), w => w.StartsWith("엔진 출력 한 줄을 읽지 못했습니다: {\"type\":\"item.completed\""));
+        Assert.Equal("요구사항을 정리했습니다", JsonDocument.Parse(codex.Last().Text).RootElement.GetProperty("summary").GetString());
     }
 }

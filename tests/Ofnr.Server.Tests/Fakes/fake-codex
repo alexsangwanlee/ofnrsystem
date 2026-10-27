@@ -27,6 +27,13 @@ case "${FAKE_SCENARIO:-ok}" in
     echo 'Error: required MCP servers failed to initialize: ofnr' >&2
     exit 1
     ;;
+  bad_json)
+    echo '{"type":"thread.started","thread_id":"th-9"}'
+    echo '{"type":"item.completed","item":'
+    echo '{"type":"item.started"}'
+    echo "$answer"
+    echo '{"type":"turn.completed","usage":{"input_tokens":"many"}}'
+    ;;
   *)
     echo '{"type":"thread.started","thread_id":"th-9"}'
     echo '{"type":"turn.started"}'

@@ -21,6 +21,17 @@ case "${FAKE_SCENARIO:-ok}" in
     echo "$init"
     echo '{"type":"result","subtype":"success","is_error":false,"result":"done","session_id":"sess-123","total_cost_usd":0.01,"usage":{"input_tokens":10,"output_tokens":2},"permission_denials":[{"tool_name":"Bash","tool_use_id":"tu9","tool_input":{"command":"rm -rf x"}}]}'
     ;;
+  leftover)
+    sleep 20 &  # a child the CLI started and did not stop, still holding the inherited stdout and stderr
+    echo "$init"
+    echo "$result"
+    ;;
+  bad_json)
+    echo "$init"
+    echo '{"type":"system","subtype":"init","session_id":"sess-123"'
+    echo '{"type":"assistant","message":"x"}'
+    echo '{"type":"result","subtype":"success","is_error":false,"result":"done","session_id":"sess-123","usage":7}'
+    ;;
   *)
     echo "$init"
     echo '{"type":"assistant","message":{"content":[{"type":"text","text":"메일을 분석합니다"},{"type":"tool_use","id":"tu1","name":"mcp__ofnr__get_project","input":{}}]}}'

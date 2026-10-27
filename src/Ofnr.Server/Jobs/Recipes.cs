@@ -19,7 +19,7 @@ public sealed record Recipe
     public int TimeoutMinutes { get; init; } = 30;
     public decimal? MaxBudgetUsd { get; init; }
     public bool NeedsProject { get; init; } = true;
-    /// <summary>False for recipes whose MCP servers can run arbitrary scripts: their prompt never carries mail text.</summary>
+    /// <summary>False for recipes whose MCP servers can run arbitrary scripts: neither their prompt nor the dashboard's get_mail_thread gives them mail text.</summary>
     public bool UntrustedMailInPrompt { get; init; } = true;
     public ClaudeSettings Claude { get; init; } = new();
     public CodexSettings Codex { get; init; } = new();

@@ -19,7 +19,8 @@ public sealed class EngineInvocationTests : IDisposable
     OfnrOptions Options()
     {
         File.WriteAllText(Path.Combine(root, "mcp.json"), """
-            { "mcpServers": { "excel": { "type": "stdio", "command": "C:\\OFNR\\x", "args": ["--stdio", "한글"], "env": { "TEMP": "C:\\OFNR\\tmp" } } } }
+            { "mcpServers": { "excel": { "type": "stdio", "command": "C:\\OFNR\\x", "args": ["--stdio", "한글"], "env": { "TEMP": "C:\\OFNR\\tmp" } },
+              "sketchup": { "command": "uvx", "args": ["sketchup-mcp2==0.4.0"] }, "illustrator": { "command": "illustrator-mcp-server" } } }
             """);
         return new OfnrOptions
         {
@@ -58,7 +59,7 @@ public sealed class EngineInvocationTests : IDisposable
         Assert.Equal(@"C:\OFNR\x", (string)servers["excel"]!["command"]!);
         Assert.Equal("secret-token", plan.Env["OFNR_JOB_TOKEN"]);
         Assert.Equal("0", plan.Env["CLAUDE_CODE_MCP_AUTO_BACKGROUND_MS"]);
-        Assert.Equal(Path.Combine(o.JobsRoot, "j-" + ctx.JobId.ToString("N")[^8..]), plan.WorkDir);
+        Assert.Equal(Path.Combine(o.JobsRoot, "j-" + ctx.JobId.ToString("N")), plan.WorkDir);
         Assert.Null(plan.SchemaPath);
         Assert.Equal(
             ["--plugin-dir", o.PluginDir, "--mcp-config", mcpPath, "--strict-mcp-config", "--permission-mode", "dontAsk",
@@ -98,14 +99,15 @@ public sealed class EngineInvocationTests : IDisposable
     {
         var o = Options();
         var ctx = Ctx("quote", "codex", Folder);
-        var system = "첫 줄\n\"인용\" C:\\OFNR";
+        var system = "첫 줄\n\"인용\" C:\\OFNR 😀";
 
         var c = ConfigValues(EngineInvocation.Build(ctx.Recipe, ctx, o, "secret-token", system));
 
         Assert.Contains("mcp_servers.excel.command=\"C:\\\\OFNR\\\\x\"", c);
         Assert.Contains("mcp_servers.excel.env.TEMP=\"C:\\\\OFNR\\\\tmp\"", c);
         Assert.Equal(["--stdio", "한글"], JsonSerializer.Deserialize<string[]>(c.Single(v => v.StartsWith("mcp_servers.excel.args="))["mcp_servers.excel.args=".Length..])!);
-        Assert.Equal(system, JsonSerializer.Deserialize<string>(c.Single(v => v.StartsWith("developer_instructions="))["developer_instructions=".Length..]));
+        Assert.Equal(system.Replace("😀", ""), JsonSerializer.Deserialize<string>(c.Single(v => v.StartsWith("developer_instructions="))["developer_instructions=".Length..]));
+        Assert.DoesNotContain(c, v => Regex.IsMatch(v, @"\\uD[89A-F]", RegexOptions.IgnoreCase)); // a surrogate escape is not valid TOML
         string[] expected =
         [
             "sandbox_mode=\"workspace-write\"",
@@ -123,6 +125,22 @@ public sealed class EngineInvocationTests : IDisposable
             "mcp_servers.excel.required=true",
         ];
         Assert.All(expected, v => Assert.Contains(v, c));
+    }
+
+    [Theory]
+    [InlineData("model3d")]
+    [InlineData("graphic")]
+    public void Script_recipes_cannot_read_mail_through_the_dashboard(string recipe)
+    {
+        var o = Options();
+        var claude = Ctx(recipe, "claude", Folder);
+        var codex = Ctx(recipe, "codex", Folder);
+
+        var args = EngineInvocation.Build(claude.Recipe, claude, o, "t", "s").ExtraArgs.ToArray();
+        var c = ConfigValues(EngineInvocation.Build(codex.Recipe, codex, o, "t", "s"));
+
+        Assert.Equal("mcp__ofnr__get_mail_thread", args[Array.IndexOf(args, "--disallowedTools") + 1]);
+        Assert.Contains("mcp_servers.ofnr.disabled_tools=[\"get_mail_thread\"]", c);
     }
 
     [Fact]

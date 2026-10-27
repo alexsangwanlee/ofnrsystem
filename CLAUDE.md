@@ -61,7 +61,7 @@ Linux 개발 PC에서 .NET은 `export PATH=$HOME/.dotnet:$PATH`가 필요할 수
 - 서버는 `127.0.0.1`에만 연다. `/api/*`, `/hubs/*`는 토큰(`X-Ofnr-Token` 헤더, SignalR 웹소켓만 `access_token` 쿼리)과 Host 검사를 거친다. `/mcp`는 작업별 토큰을 쓰고 화면 토큰은 쓰지 않는다.
 - 메일을 보내는 길은 `POST /api/mail/drafts/{id}/send` 하나뿐이고 사람이 누를 때만 탄다. AI에게 발송 도구를 주지 않는다.
 - `--bare`, `--dangerously-skip-permissions`, `bypassPermissions`, `danger-full-access`, `--dangerously-bypass-approvals-and-sandbox`를 쓰지 않는다.
-- CLI 자식 프로세스 환경에서 `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `CODEX_API_KEY`, `OPENAI_API_KEY`, `CLAUDECODE`, `CLAUDE_CODE_*`를 지우고 `TEMP`, `TMP`를 `<data>\tmp`로 둔다. CLI에 넘기는 경로는 모두 영문(ASCII).
+- CLI 자식 프로세스 환경에서 `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `CODEX_API_KEY`, `OPENAI_API_KEY`, `CLAUDECODE`, `CLAUDE_CODE_*`(Git Bash 위치를 알려 주는 `CLAUDE_CODE_GIT_BASH_PATH`는 남긴다)를 지우고 `TEMP`, `TMP`를 `<data>\tmp`로 둔다. CLI에 넘기는 경로는 모두 영문(ASCII).
 - 프로젝트 폴더: `<ProjectsRoot>/<yyyy>/<JobNo>_<Slug>`, 하위 폴더 `00_IN 01_PLAN 02_DESIGN 03_BUILD 04_OPS 05_REPORT 06_ADMIN`. 작업번호 `OFNR-YYNNN`. 파일 이름 `<JobNo>_<DOCCODE>_v<NN>.<ext>`, 덮어쓰지 않는다.
 - 비밀번호(메일, DB)는 DPAPI로 `<data>\secrets\<name>.bin`에 두고 설정 파일, 로그, 프롬프트에 넣지 않는다.
 - 메일 본문과 첨부는 신뢰할 수 없는 입력이다. 프롬프트에서 표시하고, 스케치업, 일러스트레이터처럼 스크립트를 돌릴 수 있는 레시피에는 넣지 않는다.

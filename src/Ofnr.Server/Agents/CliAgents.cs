@@ -31,6 +31,13 @@ public abstract class CliAgent(string name, string exe, string workDir, IReadOnl
     // API keys would win over the subscription login; a parent Claude Code session leaks CLAUDECODE and CLAUDE_CODE_*.
     static readonly string[] StrippedEnv = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_PROFILE", "CODEX_API_KEY", "OPENAI_API_KEY", "CLAUDECODE"];
 
+    // Claude Code on Windows reads it to find Git Bash when Git is not in its default place.
+    const string GitBashPath = "CLAUDE_CODE_GIT_BASH_PATH";
+
+    // After the CLI exits, anything it started and left running (an MCP server, a command Codex ran) can still hold the
+    // pipes it inherited, so from then on a read waits only this long for output already on its way.
+    static readonly TimeSpan DrainGrace = TimeSpan.FromSeconds(2);
+
     public override string? Name => name;
     protected override string? IdCore => name; // stable id: workflow checkpoints must rebind to the same executor
     protected string WorkDir => workDir;
@@ -64,7 +71,7 @@ public abstract class CliAgent(string name, string exe, string workDir, IReadOnl
         };
         foreach (var a in BuildArgs(run, resumeId, schema, extraArgs)) psi.ArgumentList.Add(a);
         foreach (var k in psi.Environment.Keys.Where(k => StrippedEnv.Contains(k, StringComparer.OrdinalIgnoreCase)
-            || k.StartsWith("CLAUDE_CODE_", StringComparison.OrdinalIgnoreCase)).ToList())
+            || k.StartsWith("CLAUDE_CODE_", StringComparison.OrdinalIgnoreCase) && !k.Equals(GitBashPath, StringComparison.OrdinalIgnoreCase)).ToList())
             psi.Environment.Remove(k);
         if (env is not null) foreach (var (k, v) in env) psi.Environment[k] = v;
 
@@ -72,7 +79,21 @@ public abstract class CliAgent(string name, string exe, string workDir, IReadOnl
         try
         {
             using var kill = ct.Register(() => Kill(p));
-            var stderr = p.StandardError.ReadToEndAsync(CancellationToken.None);
+            var exited = p.WaitForExitAsync(ct);
+            async Task<string?> ReadLine(StreamReader r)
+            {
+                var read = r.ReadLineAsync(ct).AsTask();
+                if (await Task.WhenAny(read, exited) == read || await Task.WhenAny(read, Task.Delay(DrainGrace, ct)) == read) return await read;
+                ct.ThrowIfCancellationRequested();
+                return null; // the abandoned read finishes whenever the pipe finally closes
+            }
+            async Task<List<string>> ReadAll(StreamReader r)
+            {
+                var lines = new List<string>();
+                while (await ReadLine(r) is { } l) lines.Add(l);
+                return lines;
+            }
+            var stderr = ReadAll(p.StandardError);
             try
             {
                 // Prompt goes through stdin (no command-line length/quoting limits); closing stdin is required.
@@ -82,16 +103,23 @@ public abstract class CliAgent(string name, string exe, string workDir, IReadOnl
             catch (IOException) { } // the CLI exited before reading the prompt; its exit code and stderr say why
 
             var saved = resumeId;
-            while (await p.StandardOutput.ReadLineAsync(ct) is { } line)
+            while (await ReadLine(p.StandardOutput) is { } line)
             {
                 if (!line.StartsWith('{')) continue;
-                using var doc = JsonDocument.Parse(line);
+                using var doc = TryParse(line);
+                if (doc is null)
+                {
+                    var bad = Warning($"엔진 출력 한 줄을 읽지 못했습니다: {(line.Length > 200 ? line[..200] : line)}");
+                    bad.AgentId = Id;
+                    yield return bad;
+                    continue;
+                }
                 foreach (var u in Map(doc.RootElement, run)) { u.AgentId = Id; yield return u; }
                 // Saved as soon as known, so a follow-up can resume a run that later failed, timed out or was canceled.
                 if (run.SessionId is { } sid && sid != saved) session.StateBag.SetValue(SessionKey, saved = sid);
             }
-            await p.WaitForExitAsync(ct);
-            var err = (await stderr).Trim();
+            await exited;
+            var err = string.Join('\n', await stderr).Trim();
             foreach (var l in err.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
             {
                 var w = Warning(l);
@@ -119,14 +147,28 @@ public abstract class CliAgent(string name, string exe, string workDir, IReadOnl
         catch (Win32Exception e) { throw new InvalidOperationException($"엔진을 실행하지 못했습니다. 설치와 경로를 확인해 주세요: {psi.FileName}", e); }
     }
 
+    // No HasExited check: on Windows .NET still finds an exited process's children by parent id, so this also ends what
+    // the CLI left running. Linux reparents them to init, which only affects development.
     static void Kill(Process p)
     {
-        try { if (!p.HasExited) p.Kill(entireProcessTree: true); }
-        catch (InvalidOperationException) { }
+        try { p.Kill(entireProcessTree: true); }
+        catch (Exception e) when (e is InvalidOperationException or AggregateException) { }
     }
 
+    static JsonDocument? TryParse(string line)
+    {
+        try { return JsonDocument.Parse(line); }
+        catch (JsonException) { return null; }
+    }
+
+    protected static JsonElement? Prop(JsonElement e, string property) =>
+        e.ValueKind == JsonValueKind.Object && e.TryGetProperty(property, out var v) ? v : null;
+
     protected static string? Str(JsonElement e, string property) =>
-        e.ValueKind == JsonValueKind.Object && e.TryGetProperty(property, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+        Prop(e, property) is { ValueKind: JsonValueKind.String } v ? v.GetString() : null;
+
+    protected static long? Tokens(JsonElement e, string key) =>
+        Prop(e, "usage") is { } u && Prop(u, key) is { ValueKind: JsonValueKind.Number } n && n.TryGetInt64(out var v) ? v : null;
 
     // Progress text is surfaced as reasoning so AgentResponse.Text holds only the final answer (needed by RunAsync<T>).
     protected static AgentResponseUpdate Progress(string? text) => new(ChatRole.Assistant, [new TextReasoningContent(text)]);
@@ -167,8 +209,8 @@ public sealed class ClaudeCodeAgent(string name, string exe, string workDir, IRe
                     && servers.EnumerateArray().Any(s => Str(s, "name") == "ofnr" && Str(s, "status") != "connected"))
                     throw new InvalidOperationException("대시보드 MCP에 연결하지 못했습니다");
                 break;
-            case "assistant":
-                foreach (var b in e.GetProperty("message").GetProperty("content").EnumerateArray())
+            case "assistant" when Prop(e, "message") is { } message && Prop(message, "content") is { ValueKind: JsonValueKind.Array } content:
+                foreach (var b in content.EnumerateArray())
                 {
                     var t = Str(b, "type");
                     if (t == "text") yield return Progress(Str(b, "text"));
@@ -189,8 +231,7 @@ public sealed class ClaudeCodeAgent(string name, string exe, string workDir, IRe
                     run.FinalText = so.GetRawText();
                 else
                     run.Error = "Claude가 결과 형식에 맞는 응답을 주지 않았습니다.";
-                long? Tokens(string key) => e.TryGetProperty("usage", out var u) && u.TryGetProperty(key, out var n) && n.ValueKind == JsonValueKind.Number ? n.GetInt64() : null;
-                var usage = Usage(Tokens("input_tokens"), Tokens("output_tokens"));
+                var usage = Usage(Tokens(e, "input_tokens"), Tokens(e, "output_tokens"));
                 usage.AdditionalProperties = new() { ["total_cost_usd"] = e.TryGetProperty("total_cost_usd", out var c) && c.ValueKind == JsonValueKind.Number ? c.GetDouble() : 0 };
                 yield return usage;
                 break;
@@ -228,8 +269,7 @@ public sealed class CodexAgent(string name, string exe, string workDir, IReadOnl
             case "thread.started":
                 run.SessionId = Str(e, "thread_id");
                 break;
-            case "item.started" or "item.completed":
-                var item = e.GetProperty("item");
+            case "item.started" or "item.completed" when Prop(e, "item") is { } item:
                 var kind = Str(item, "type");
                 if (kind == "agent_message" && type == "item.completed")
                 {
@@ -242,8 +282,7 @@ public sealed class CodexAgent(string name, string exe, string workDir, IReadOnl
                     yield return Warning(Str(item, "message"));
                 break;
             case "turn.completed":
-                var u = e.GetProperty("usage");
-                yield return Usage(u.GetProperty("input_tokens").GetInt64(), u.GetProperty("output_tokens").GetInt64());
+                yield return Usage(Tokens(e, "input_tokens"), Tokens(e, "output_tokens"));
                 break;
             case "turn.failed":
                 run.Error = $"Codex 실행 오류: {(e.TryGetProperty("error", out var err) ? Str(err, "message") : null)}";

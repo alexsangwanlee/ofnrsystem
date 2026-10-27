@@ -15,12 +15,15 @@ public static class EngineInvocation
     // Dashboard MCP tools (Task 5). Codex cancels MCP calls under approval_policy="never" unless each tool is pre-approved (openai/codex#24135).
     static readonly string[] OfnrTools = ["get_project", "get_mail_thread", "save_reply_draft", "report_progress", "ask_ceo"];
 
+    // Recipes that keep mail out of the prompt (Recipe.UntrustedMailInPrompt) must not fetch it through this tool either.
+    const string MailTool = "get_mail_thread";
+
     const int McpTimeoutSec = 1800;
 
     public static EnginePlan Build(Recipe r, JobContext ctx, OfnrOptions o, string mcpToken, string system)
     {
-        // The last 8 hex: a v7 id starts with its timestamp, so the first 8 are shared by jobs created within about a minute.
-        var work = Path.Combine(o.JobsRoot, "j-" + ctx.JobId.ToString("N")[^8..]);
+        // The whole id: a v7 id starts with its timestamp, and any 8 hex of it collide within a few thousand jobs.
+        var work = Path.Combine(o.JobsRoot, "j-" + ctx.JobId.ToString("N"));
         Directory.CreateDirectory(work);
         var writable = r.Id == "skill-learning" ? Path.Combine(o.PluginDir, "skills") : ctx.ProjectFolder;
         var servers = RecipeServers(r, o);
@@ -42,7 +45,8 @@ public static class EngineInvocation
 
             args.AddRange(["--plugin-dir", o.PluginDir, "--mcp-config", mcpPath, "--strict-mcp-config", "--permission-mode", r.Claude.PermissionMode,
                 "--allowedTools", string.Join(",", r.Claude.AllowedTools.Concat(r.McpServers.Select(s => $"mcp__{s}__*")))]);
-            if (r.Claude.DisallowedTools.Length > 0) args.AddRange(["--disallowedTools", string.Join(",", r.Claude.DisallowedTools)]);
+            string[] disallowed = r.UntrustedMailInPrompt ? r.Claude.DisallowedTools : [.. r.Claude.DisallowedTools, "mcp__ofnr__" + MailTool];
+            if (disallowed.Length > 0) args.AddRange(["--disallowedTools", string.Join(",", disallowed)]);
             args.AddRange(["--append-system-prompt", system]);
             if (writable is not null) args.AddRange(["--add-dir", writable]);
             if (r.MaxBudgetUsd is { } budget) args.AddRange(["--max-budget-usd", budget.ToString(CultureInfo.InvariantCulture)]);
@@ -57,8 +61,9 @@ public static class EngineInvocation
         CopyDir(Path.Combine(o.PluginDir, "knowledge"), Path.Combine(work, ".agents", "knowledge"));
         foreach (var skill in r.Skills) CopyDir(Path.Combine(o.PluginDir, "skills", skill), Path.Combine(work, ".agents", "skills", skill));
 
-        // A JSON value is valid TOML, so -c never needs hand-written quoting.
-        void C(string key, object value) => args.AddRange(["-c", $"{key}={JsonSerializer.Serialize(value)}"]);
+        // A JSON value is valid TOML, so -c never needs hand-written quoting. TOML rejects the surrogate-pair escapes
+        // JsonSerializer writes for characters outside the BMP (an emoji), so those are dropped.
+        void C(string key, object value) => args.AddRange(["-c", $"{key}={JsonSerializer.Serialize(value is string s ? string.Concat(s.EnumerateRunes().Where(x => x.IsBmp)) : value)}"]);
         void Common(string server)
         {
             C($"mcp_servers.{server}.default_tools_approval_mode", "approve");
@@ -74,6 +79,7 @@ public static class EngineInvocation
         C("mcp_servers.ofnr.bearer_token_env_var", "OFNR_JOB_TOKEN");
         Common("ofnr");
         foreach (var tool in OfnrTools) C($"mcp_servers.ofnr.tools.{tool}.approval_mode", "approve");
+        if (!r.UntrustedMailInPrompt) C("mcp_servers.ofnr.disabled_tools", new[] { MailTool });
         foreach (var (name, server) in servers)
         {
             C($"mcp_servers.{name}.command", (string)server["command"]!);
