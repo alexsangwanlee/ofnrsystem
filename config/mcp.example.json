@@ -1,0 +1,34 @@
+{
+  "mcpServers": {
+    "excel": {
+      "type": "stdio",
+      "command": "C:\\OFNR\\tools\\mcp-excel.exe",
+      "args": [],
+      "env": { "TEMP": "C:\\OFNR\\tmp", "TMP": "C:\\OFNR\\tmp" }
+    },
+    "powerpoint": {
+      "type": "stdio",
+      "command": "C:\\OFNR\\tools\\mcp-powerpoint.exe",
+      "args": [],
+      "env": { "TEMP": "C:\\OFNR\\tmp", "TMP": "C:\\OFNR\\tmp" }
+    },
+    "sketchup": {
+      "type": "stdio",
+      "command": "C:\\OFNR\\tools\\uvx.exe",
+      "args": ["sketchup-mcp2==0.4.0"],
+      "env": { "SKETCHUP_MCP_HOST": "127.0.0.1", "SKETCHUP_MCP_PORT": "9876", "SKETCHUP_MCP_TIMEOUT": "120", "TEMP": "C:\\OFNR\\tmp", "TMP": "C:\\OFNR\\tmp" }
+    },
+    "illustrator": {
+      "type": "stdio",
+      "command": "C:\\Program Files\\nodejs\\node.exe",
+      "args": ["C:\\OFNR\\tools\\node_modules\\illustrator-mcp-server\\dist\\index.js"],
+      "env": { "ILLUSTRATOR_MCP_TIMEOUT_NORMAL": "60000", "ILLUSTRATOR_MCP_TIMEOUT_HEAVY": "180000", "TEMP": "C:\\OFNR\\tmp", "TMP": "C:\\OFNR\\tmp" }
+    },
+    "photoshop": {
+      "type": "stdio",
+      "command": "C:\\Program Files\\nodejs\\node.exe",
+      "args": ["C:\\OFNR\\tools\\node_modules\\@alisaitteke\\photoshop-mcp\\dist\\index.js"],
+      "env": { "ANALYTICS_DISABLED": "1", "TEMP": "C:\\OFNR\\tmp", "TMP": "C:\\OFNR\\tmp" }
+    }
+  }
+}

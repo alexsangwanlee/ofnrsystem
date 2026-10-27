@@ -1,0 +1,118 @@
+[
+  {
+    "id": "brief",
+    "name": "요구사항 정리",
+    "stage": "Inquiry",
+    "skills": ["brief"],
+    "engines": ["claude", "codex"],
+    "docCode": "BRIEF",
+    "outputDir": "01_PLAN",
+    "prompt": "연결된 메일, 받은 자료(00_IN), 프로젝트 정보로 요구사항 정리 문서를 만드세요."
+  },
+  {
+    "id": "reply",
+    "name": "회신 초안",
+    "stage": "Inquiry",
+    "skills": ["mail-reply"],
+    "engines": ["claude", "codex"],
+    "prompt": "연결된 메일에 보낼 회신 초안을 쓰고 save_reply_draft로 저장하세요. 파일은 만들지 않습니다."
+  },
+  {
+    "id": "quote",
+    "name": "견적서",
+    "stage": "Planning",
+    "skills": ["quote"],
+    "mcpServers": ["excel"],
+    "lock": "office",
+    "engines": ["claude"],
+    "docCode": "QUOTE",
+    "outputDir": "01_PLAN",
+    "prompt": "견적서를 만드세요. 단가와 수량은 지어내지 말고 모르면 확인 필요로 남기세요."
+  },
+  {
+    "id": "proposal",
+    "name": "제안서",
+    "stage": "Planning",
+    "skills": ["proposal"],
+    "mcpServers": ["powerpoint"],
+    "lock": "office",
+    "engines": ["claude"],
+    "docCode": "PROP",
+    "outputDir": "01_PLAN",
+    "prompt": "제안서를 만드세요."
+  },
+  {
+    "id": "document",
+    "name": "문서",
+    "stage": "Planning",
+    "skills": ["document"],
+    "engines": ["claude"],
+    "docCode": "DOC",
+    "outputDir": "01_PLAN",
+    "prompt": "대표의 지시에 맞는 문서(계약서, 공문 등)를 만드세요."
+  },
+  {
+    "id": "ops-manual",
+    "name": "운영 매뉴얼",
+    "stage": "Operation",
+    "skills": ["document"],
+    "engines": ["claude"],
+    "docCode": "OPSMANUAL",
+    "outputDir": "04_OPS",
+    "prompt": "현장 운영 매뉴얼을 만드세요."
+  },
+  {
+    "id": "model3d",
+    "name": "3D 모델",
+    "stage": "Design",
+    "skills": ["sketchup"],
+    "mcpServers": ["sketchup"],
+    "lock": "sketchup",
+    "engines": ["claude"],
+    "docCode": "MODEL",
+    "outputDir": "02_DESIGN/3D",
+    "timeoutMinutes": 60,
+    "untrustedMailInPrompt": false,
+    "prompt": "SketchUp으로 3D 모델과 장면 이미지를 만드세요."
+  },
+  {
+    "id": "graphic",
+    "name": "그래픽",
+    "stage": "Design",
+    "skills": ["illustrator"],
+    "mcpServers": ["illustrator"],
+    "lock": "illustrator",
+    "engines": ["claude"],
+    "docCode": "KV",
+    "outputDir": "02_DESIGN/KV",
+    "timeoutMinutes": 60,
+    "untrustedMailInPrompt": false,
+    "prompt": "Illustrator로 키비주얼과 그래픽을 만드세요."
+  },
+  {
+    "id": "report",
+    "name": "결과보고서",
+    "stage": "Report",
+    "skills": ["report"],
+    "mcpServers": ["powerpoint"],
+    "lock": "office",
+    "engines": ["claude"],
+    "docCode": "REPORT",
+    "outputDir": "05_REPORT",
+    "prompt": "결과보고서를 만드세요."
+  },
+  {
+    "id": "skill-learning",
+    "name": "스킬 학습",
+    "skills": ["skill-learning"],
+    "engines": ["claude", "codex"],
+    "needsProject": false,
+    "prompt": "대표의 검토 의견을 대상 스킬의 학습된 규칙에 반영하세요."
+  },
+  {
+    "id": "free",
+    "name": "자유 지시",
+    "engines": ["claude", "codex"],
+    "needsProject": false
+  }
+]

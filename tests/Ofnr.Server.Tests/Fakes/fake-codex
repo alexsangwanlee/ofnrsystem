@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# Fake Codex CLI: logs args, env and stdin next to $FAKE_LOG (NUL-separated), then prints canned JSONL for $FAKE_SCENARIO.
+printf '%s\0' "$@" > "$FAKE_LOG.args"
+env -0 > "$FAKE_LOG.env"
+cat > "$FAKE_LOG.stdin"
+
+answer='{"type":"item.completed","item":{"id":"item_2","type":"agent_message","text":"{\"summary\":\"요구사항을 정리했습니다\",\"files\":[],\"needs_confirmation\":[],\"next_steps\":[]}"}}'
+usage='{"type":"turn.completed","usage":{"input_tokens":50,"cached_input_tokens":0,"output_tokens":10,"reasoning_output_tokens":0}}'
+
+case "${FAKE_SCENARIO:-ok}" in
+  error_events)
+    echo '{"type":"thread.started","thread_id":"th-9"}'
+    echo '{"type":"turn.started"}'
+    echo '{"type":"error","message":"Reconnecting... 1/5"}'
+    echo '{"type":"error","message":"Reconnecting... 2/5"}'
+    echo "$answer"
+    echo "$usage"
+    ;;
+  turn_failed)
+    echo '{"type":"thread.started","thread_id":"th-9"}'
+    echo '{"type":"turn.started"}'
+    echo '{"type":"error","message":"Reconnecting... 5/5"}'
+    echo '{"type":"turn.failed","error":{"message":"stream disconnected before completion"}}'
+    exit 1
+    ;;
+  exit1_empty)
+    echo 'Error: required MCP servers failed to initialize: ofnr' >&2
+    exit 1
+    ;;
+  *)
+    echo '{"type":"thread.started","thread_id":"th-9"}'
+    echo '{"type":"turn.started"}'
+    echo '{"type":"item.started","item":{"id":"item_1","type":"command_execution","command":"ls","status":"in_progress"}}'
+    echo "$answer"
+    echo "$usage"
+    ;;
+esac

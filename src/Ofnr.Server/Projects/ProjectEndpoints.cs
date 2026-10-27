@@ -10,7 +10,7 @@ namespace Ofnr.Server.Projects;
 
 public static class ProjectEndpoints
 {
-    static readonly string[] StageLabels = ["문의", "기획", "디자인", "제작", "운영", "리포트", "완료"];
+    internal static readonly string[] StageLabels = ["문의", "기획", "디자인", "제작", "운영", "리포트", "완료"];
 
     // Serializes number allocation in this process; the unique index and one retry cover a second server process.
     static readonly SemaphoreSlim CreateLock = new(1, 1);
