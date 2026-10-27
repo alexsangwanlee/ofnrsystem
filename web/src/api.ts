@@ -27,21 +27,31 @@ function readBrowserToken(): string {
   return sessionStorage.getItem(TOKEN_KEY) ?? "";
 }
 
+// Runs at import, before BrowserRouter copies the URL into its state; a later strip would let
+// useSearchParams write the token back into the address bar.
+const browserToken = isTauri() ? "" : readBrowserToken();
+
 export function getServerInfo(): Promise<ServerInfo> {
-  serverInfo ??= isTauri()
-    ? invoke<ServerInfo>("server_info")
-    : Promise.resolve({ baseUrl: import.meta.env.VITE_API ?? "", token: readBrowserToken() });
+  serverInfo ??= (
+    isTauri()
+      ? invoke<ServerInfo>("server_info")
+      : Promise.resolve({ baseUrl: import.meta.env.VITE_API ?? "", token: browserToken })
+  ).catch((e: unknown) => {
+    // The sidecar may still be starting, so the next call asks again.
+    serverInfo = undefined;
+    throw e;
+  });
   return serverInfo;
 }
 
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const { baseUrl, token } = await getServerInfo();
   const headers = new Headers(init.headers);
-  headers.set("X-Ofnr-Token", token);
   if (typeof init.body === "string" && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
 
   let res: Response;
   try {
+    const { baseUrl, token } = await getServerInfo();
+    headers.set("X-Ofnr-Token", token);
     res = await fetch(baseUrl + path, { ...init, headers });
   } catch {
     throw new ApiError(0, "서버에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.");

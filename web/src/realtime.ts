@@ -12,6 +12,8 @@ export interface OpsHandlers {
   mailUpdated?: (mail: MailSummaryDto) => void;
   projectUpdated?: (project: ProjectDto) => void;
   notify?: (n: NotifyDto) => void;
+  /** After every (re)connect; events sent while disconnected are lost, so reload what is shown. */
+  connected?: () => void;
 }
 
 const METHODS = [
@@ -39,11 +41,13 @@ function connect(): Promise<HubConnection> {
       c.on(m, (arg: never) => listeners.forEach((l) => (l.current[m] as ((a: never) => void) | undefined)?.(arg)));
     }
     c.on("notify", (n: NotifyDto) => void showDesktopNotification(n));
-    // Groups do not survive a reconnect (new connection id), so rejoin open job pages.
-    c.onreconnected(() => rejoin(c));
+    c.onreconnected(() => onConnected(c));
     c.onclose(() => void startUntilConnected(c));
     void startUntilConnected(c);
     return c;
+  }).catch((e: unknown) => {
+    hub = undefined;
+    throw e;
   });
   return hub;
 }
@@ -52,15 +56,17 @@ async function startUntilConnected(c: HubConnection) {
   while (c.state === HubConnectionState.Disconnected) {
     try {
       await c.start();
-      rejoin(c);
+      onConnected(c);
     } catch {
       await new Promise((r) => setTimeout(r, 5000));
     }
   }
 }
 
-function rejoin(c: HubConnection) {
+function onConnected(c: HubConnection) {
+  // Groups do not survive a reconnect (new connection id), so rejoin open job pages.
   joinedJobs.forEach((id) => void c.invoke("JoinJob", id).catch(() => undefined));
+  listeners.forEach((l) => l.current.connected?.());
 }
 
 async function showDesktopNotification(n: NotifyDto) {
@@ -83,7 +89,8 @@ export function useOps(handlers: OpsHandlers) {
   useEffect(() => {
     const entry = ref;
     listeners.add(entry);
-    void connect();
+    // A failed connect is retried by the next useOps mount or joinJob.
+    connect().catch(() => undefined);
     return () => {
       listeners.delete(entry);
     };

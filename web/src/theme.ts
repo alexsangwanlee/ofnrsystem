@@ -50,9 +50,11 @@ export const lightTheme: Theme = {
   colorCompoundBrandBackgroundPressed: brand[100],
 };
 
+const darkBase = createDarkTheme(brand);
+
 // On dark surfaces the ink end is invisible, so brand foregrounds and fills come from the paper end.
 export const darkTheme: Theme = {
-  ...createDarkTheme(brand),
+  ...darkBase,
   ...shared,
   colorBrandBackground: brand[150],
   colorBrandBackgroundHover: brand[160],
@@ -83,6 +85,12 @@ export const darkTheme: Theme = {
   colorNeutralForeground3BrandPressed: brand[140],
   colorNeutralForeground3BrandSelected: brand[150],
   colorNeutralStrokeAccessibleSelected: brand[150],
+  // Filled danger, severe and success badges also use the on-brand (ink) text color, which is about
+  // 3.5:1 on Fluent's saturated fills; the lighter tints reach 6:1. Progress bars and presence icons
+  // in dark mode get the lighter tints too.
+  colorPaletteRedBackground3: darkBase.colorPaletteRedForeground1,
+  colorPaletteDarkOrangeBackground3: darkBase.colorPaletteDarkOrangeForeground1,
+  colorPaletteGreenBackground3: darkBase.colorPaletteGreenForeground1,
 };
 
 const THEME_KEY = "ofnr.theme";

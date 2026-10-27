@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactElement } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactElement } from "react";
 import { Outlet, useLinkClickHandler, useLocation, useNavigate } from "react-router";
 import {
   Button,
@@ -77,15 +77,20 @@ export function AppShell({ dark, onToggleTheme }: { dark: boolean; onToggleTheme
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const [attention, setAttention] = useState(0);
+  const seq = useRef(0);
 
   const refresh = useCallback(() => {
+    // Events come in bursts, so only the latest request may set the count.
+    const n = ++seq.current;
     // The badge is a hint; a failed refresh keeps the last count and the 오늘 page shows the error.
     api<TodayDto>("/api/today")
-      .then((t) => setAttention(t.counts.attention))
+      .then((t) => {
+        if (n === seq.current) setAttention(t.counts.attention);
+      })
       .catch(() => undefined);
   }, []);
   useEffect(refresh, [refresh]);
-  useOps({ approvalRequested: refresh, approvalResolved: refresh, jobUpdated: refresh });
+  useOps({ approvalRequested: refresh, approvalResolved: refresh, jobUpdated: refresh, connected: refresh });
 
   return (
     <div className={s.root}>
