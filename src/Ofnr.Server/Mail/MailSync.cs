@@ -38,7 +38,7 @@ public interface IMailSync
     CheckDto Health { get; }
 }
 
-public sealed class MailSync(IServiceScopeFactory scopes, SettingsStore settings, IOpsNotifier notifier, ILogger<MailSync> logger) : BackgroundService, IMailSync
+public sealed class MailSync(IServiceScopeFactory scopes, SettingsStore settings, IOpsNotifier notifier, MailTriage triage, ILogger<MailSync> logger) : BackgroundService, IMailSync
 {
     internal const string NotConfigured = "메일 계정이 설정되지 않았습니다. 설정에서 메일 주소와 앱 비밀번호를 입력해 주세요.";
     const int Batch = 50;
@@ -46,7 +46,10 @@ public sealed class MailSync(IServiceScopeFactory scopes, SettingsStore settings
     readonly SemaphoreSlim gate = new(1, 1);
     CheckDto? last;
 
-    public CheckDto Health => settings.Current.Mail.Address is { Length: > 0 } ? last ?? new("메일", true, "첫 동기화를 기다리고 있습니다.") : new("메일", false, NotConfigured);
+    /// <summary>A sync failure first, then a triage failure.</summary>
+    public CheckDto Health => settings.Current.Mail.Address is not { Length: > 0 } ? new("메일", false, NotConfigured)
+        : last is { Ok: false } || triage.Failure is null ? last ?? new("메일", true, "첫 동기화를 기다리고 있습니다.")
+        : new("메일", false, triage.Failure);
 
     /// <summary>The setting, else the folder the server marks <c>\Sent</c>, else one named 보낸메일함 (NAVER WORKS) or Sent.</summary>
     public static async Task<string?> SentFolderAsync(IImapSource imap, MailAccount account)
@@ -144,6 +147,8 @@ public sealed class MailSync(IServiceScopeFactory scopes, SettingsStore settings
             await db.SaveChangesAsync(ct);
             // Per chunk, so mail already saved is announced even when a later chunk fails.
             foreach (var dto in await db.MailMessages.Where(m => changed.Contains(m.Id)).ToSummaries().ToListAsync(ct)) await notifier.MailUpdated(dto);
+            // In INBOX every changed row is a new mail.
+            if (!outgoing && changed.Count > 0 && settings.Current.AutoTriage) triage.Queue(changed);
         }
         await db.SaveChangesAsync(ct); // a new or reset state when nothing was fetched
         return added;

@@ -45,6 +45,8 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<JobQueue>());
 builder.Services.AddScoped<IImapSource, MailKitImapSource>();
 builder.Services.AddScoped<ISmtpTransport, MailKitSmtp>();
 builder.Services.AddScoped<MailSender>();
+builder.Services.AddSingleton<MailTriage>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<MailTriage>());
 builder.Services.AddSingleton<MailSync>();
 builder.Services.AddSingleton<IMailSync>(sp => sp.GetRequiredService<MailSync>());
 builder.Services.AddHostedService(sp => sp.GetRequiredService<MailSync>());

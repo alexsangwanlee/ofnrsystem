@@ -102,10 +102,15 @@ public sealed class MailSyncTests
                 .AddDbContext<OfnrDb>(o => o.UseNpgsql(connectionString ?? Db!.ConnectionString))
                 .AddSingleton<IImapSource>(Imap)
                 .BuildServiceProvider();
-            Sync = new MailSync(services.GetRequiredService<IServiceScopeFactory>(), Settings, Notifier, NullLogger<MailSync>.Instance);
+            Triage = new MailTriage(services.GetRequiredService<IServiceScopeFactory>(), Settings, Agents, Notifier, NullLogger<MailTriage>.Instance);
+            Sync = new MailSync(services.GetRequiredService<IServiceScopeFactory>(), Settings, Notifier, Triage, NullLogger<MailSync>.Instance);
         }
 
         public SettingsStore Settings { get; }
+        public FakeAgents Agents { get; } = new();
+
+        /// <summary>Not started unless a test starts it, so queued mail waits.</summary>
+        public MailTriage Triage { get; }
 
         public TestDb? Db { get; }
         public FakeImap Imap { get; } = new();
@@ -136,6 +141,7 @@ public sealed class MailSyncTests
         public void Dispose()
         {
             Sync.Dispose();
+            Triage.Dispose();
             services.Dispose();
             Db?.Dispose();
             Directory.Delete(data, true);
@@ -180,6 +186,27 @@ public sealed class MailSyncTests
         Assert.Equal(4, notified.Count);
         Assert.Equal(MailStatus.Done, notified.Last(d => d.Id == self.Id).Status);
         Assert.True(rig.Sync.Health.Ok);
+    }
+
+    [Fact]
+    public async Task New_incoming_mail_is_queued_for_triage()
+    {
+        using var rig = new Rig();
+        rig.Settings.Current.PluginDir = Path.Combine(AppContext.BaseDirectory, "claude-plugin");
+        rig.Agents.Script = (_, _) => throw new InvalidOperationException("Claude 실행 오류: Not logged in");
+        await rig.Triage.StartAsync(Ct);
+        rig.Imap.Put("INBOX", 1, Msg("a@tnf.co.kr", "견적 요청"));
+        rig.Imap.Put("보낸메일함", 1, Msg("r@ofnr.kr", "RE: 견적 요청", from: "ceo@ofnr.kr"));
+
+        await rig.Sync.SyncNowAsync(Ct);
+        await JobHost.WaitFor(() => rig.Triage.Failure is not null);
+
+        var rows = await rig.Rows();
+        var prompt = Assert.Single(rig.Agents.Calls).Prompt;
+        Assert.Contains(rows.Single(m => !m.Outgoing).Id.ToString(), prompt);
+        Assert.DoesNotContain(rows.Single(m => m.Outgoing).Id.ToString(), prompt);
+        Assert.Equal(new CheckDto("메일", false, "메일 분류에 실패했습니다"), rig.Sync.Health);
+        await rig.Triage.StopAsync(Ct);
     }
 
     [Fact]

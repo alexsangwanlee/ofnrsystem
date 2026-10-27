@@ -20,10 +20,13 @@ namespace Ofnr.Server.Tests;
 public sealed class FakeCall(string engine, string workDir, IReadOnlyList<string> extraArgs, IReadOnlyDictionary<string, string>? env)
 {
     public string Engine => engine;
-    public Guid JobId { get; } = Guid.ParseExact(Path.GetFileName(workDir)[2..], "N");
+    public string WorkDir => workDir;
+    /// <summary>Empty for runs outside a job folder, such as mail triage.</summary>
+    public Guid JobId { get; } = Guid.TryParseExact(Path.GetFileName(workDir)[2..], "N", out var id) ? id : Guid.Empty;
     public IReadOnlyList<string> ExtraArgs => extraArgs;
     public IReadOnlyDictionary<string, string> Env => env ?? new Dictionary<string, string>();
     public string Prompt { get; set; } = "";
+    public JsonElement? Schema { get; set; }
     public string? ResumedSession { get; set; }
     public Guid[] RunningWith { get; set; } = [];
     public bool Canceled { get; set; }
@@ -99,6 +102,7 @@ public sealed class FakeAgents() : AgentFactory(null!)
             session.StateBag.TryGetValue<string>(CliAgent.SessionKey, out var resumed);
             call.ResumedSession = resumed;
             call.Prompt = string.Join("\n\n", messages.Select(m => m.Text));
+            call.Schema = (options?.ResponseFormat as ChatResponseFormatJson)?.Schema;
             session.StateBag.SetValue(CliAgent.SessionKey, resumed ?? "sess-" + call.JobId.ToString("N"));
             fake.Enter(call);
             try

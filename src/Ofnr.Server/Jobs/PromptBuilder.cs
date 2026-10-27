@@ -66,13 +66,14 @@ public static class PromptBuilder
         return (s.ToString(), u.ToString());
     }
 
-    /// <summary>One mail inside <c>&lt;untrusted_mail&gt;</c> tags, body cut to 6000 chars. Also used by the get_mail_thread tool.</summary>
-    public static string UntrustedMail(MailMessage mail)
+    /// <summary>One mail inside <c>&lt;untrusted_mail&gt;</c> tags, body cut to 6000 chars by default. Also used by the get_mail_thread tool and mail triage.</summary>
+    /// <param name="withId">Puts the mail id on the tag, so mail triage can answer per mail.</param>
+    public static string UntrustedMail(MailMessage mail, bool withId = false, int bodyLimit = MailBodyLimit)
     {
         var body = mail.TextBody ?? "";
-        if (body.Length > MailBodyLimit) body = body[..MailBodyLimit] + "\n(이하 생략)";
+        if (body.Length > bodyLimit) body = body[..bodyLimit] + "\n(이하 생략)";
         return new StringBuilder()
-            .AppendLine("<untrusted_mail>")
+            .AppendLine(withId ? $"<untrusted_mail id=\"{mail.Id}\">" : "<untrusted_mail>")
             .AppendLine(Defang($"보낸 사람: {mail.FromName} <{mail.FromAddress}>"))
             .AppendLine($"받은 시각: {mail.ReceivedAt.ToLocalTime():yyyy-MM-dd HH:mm}")
             .AppendLine(Defang($"제목: {mail.Subject}")).AppendLine()
