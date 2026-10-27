@@ -240,7 +240,8 @@ public sealed class ClaudeCodeAgent(string name, string exe, string workDir, IRe
                     run.FinalText = so.GetRawText();
                 else
                     run.Error = "Claude가 결과 형식에 맞는 응답을 주지 않았습니다.";
-                var usage = Usage(Tokens(e, "input_tokens"), Tokens(e, "output_tokens"));
+                // Claude counts cached prompt tokens apart from input_tokens (Codex's input_tokens already holds its cached ones).
+                var usage = Usage(new[] { "input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens" }.Sum(k => Tokens(e, k)), Tokens(e, "output_tokens"));
                 usage.AdditionalProperties = new() { ["total_cost_usd"] = e.TryGetProperty("total_cost_usd", out var c) && c.ValueKind == JsonValueKind.Number ? c.GetDouble() : 0 };
                 yield return usage;
                 break;

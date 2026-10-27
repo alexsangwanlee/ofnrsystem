@@ -12,6 +12,8 @@ public class AgentFactory(SettingsStore settings)
     public virtual AIAgent Create(string engine, string name, string workDir, IReadOnlyList<string> extraArgs, IReadOnlyDictionary<string, string>? env = null)
     {
         var o = settings.Current;
+        // cmd.exe would re-parse the arguments, and they carry project text that can come from a client's mail.
+        if (Ops.Health.ScriptError(engine == "codex" ? o.CodexExe : o.ClaudeExe) is { } error) throw new InvalidOperationException(error);
         // ASCII temp folder even when the Windows user name is Korean.
         var tmp = Path.Combine(o.DataRoot, "tmp");
         var childEnv = new Dictionary<string, string>(env ?? new Dictionary<string, string>()) { ["TEMP"] = tmp, ["TMP"] = tmp };

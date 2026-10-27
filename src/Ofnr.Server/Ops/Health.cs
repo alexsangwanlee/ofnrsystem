@@ -23,7 +23,11 @@ public sealed record HealthDto(string Version, string DataRoot, string ProjectsR
 
 public sealed partial class Health(SettingsStore settings, IMailSync mail, Backup backup, IServiceScopeFactory scopes)
 {
-    static readonly (string Name, string Pinned, string[] Login)[] Engines = [("claude", "2.1.311", ["auth", "status"]), ("codex", "0.164.0", ["login", "status"])];
+    static readonly (string Name, string Pinned, string[] Login, string LoginHelp)[] Engines =
+    [
+        ("claude", "2.1.311", ["auth", "status"], "PowerShell에서 claude를 실행하고 /login으로 로그인해 주세요."),
+        ("codex", "0.164.0", ["login", "status"], "PowerShell에서 codex login을 실행해 주세요."),
+    ];
 
     readonly ConcurrentDictionary<string, EngineDto> engines = new(); // last probe, with the last engine check applied
     readonly ConcurrentDictionary<string, CheckDto> checks = new();
@@ -53,12 +57,12 @@ public sealed partial class Health(SettingsStore settings, IMailSync mail, Backu
     async Task<EngineDto> ProbeAsync(string engine)
     {
         var o = settings.Current;
-        var (_, pinned, login) = Engines.Single(e => e.Name == engine);
+        var (_, pinned, login, loginHelp) = Engines.Single(e => e.Name == engine);
         var exe = engine == "claude" ? o.ClaudeExe : o.CodexExe;
         EngineDto dto;
         if (Script(exe) is { } script)
         {
-            dto = new(engine, script, null, pinned, false, false, $"스크립트(.cmd, .ps1)는 서버가 안전하게 실행할 수 없습니다. 설정에서 .exe 파일 경로를 지정해 주세요: {script}");
+            dto = new(engine, script, null, pinned, false, false, ScriptError(exe));
         }
         else
         {
@@ -66,9 +70,10 @@ public sealed partial class Health(SettingsStore settings, IMailSync mail, Backu
             {
                 var (exit, output) = await RunAsync(exe, "--version");
                 var version = exit == 0 ? VersionNumber().Match(output) is { Success: true } m ? m.Value : null : null;
-                dto = new(engine, exe, version, pinned, version is not null, (await RunAsync(exe, login)).Exit == 0,
-                    version is null ? $"실행 파일이 버전을 알려 주지 않았습니다: {exe}"
-                    : version != pinned ? $"고정 버전 {pinned}과 다릅니다. 엔진 점검으로 동작을 확인해 주세요." : null);
+                var loggedIn = (await RunAsync(exe, login)).Exit == 0;
+                string?[] notes = [loggedIn ? null : $"로그인이 필요합니다. {loginHelp}", version != pinned ? $"고정 버전 {pinned}과 다릅니다. 엔진 점검으로 동작을 확인해 주세요." : null];
+                dto = new(engine, exe, version, pinned, version is not null, loggedIn,
+                    version is null ? $"실행 파일이 버전을 알려 주지 않았습니다: {exe}" : string.Join(' ', notes.OfType<string>()) is { Length: > 0 } note ? note : null);
             }
             catch (Exception e) when (e is Win32Exception or TimeoutException)
             {
@@ -94,6 +99,10 @@ public sealed partial class Health(SettingsStore settings, IMailSync mail, Backu
         return path.Any(d => File.Exists(Path.Combine(d, exe + ".exe"))) ? null
             : path.SelectMany(d => Scripts.Select(x => Path.Combine(d, exe + x))).FirstOrDefault(File.Exists);
     }
+
+    /// <summary>Why <paramref name="exe"/> must not run, for health and for every engine run; null for a program.</summary>
+    internal static string? ScriptError(string exe) =>
+        Script(exe) is { } script ? $"스크립트(.cmd, .ps1)는 서버가 안전하게 실행할 수 없습니다. 설정에서 .exe 파일 경로를 지정해 주세요: {script}" : null;
 
     /// <exception cref="TimeoutException">No exit within 10 seconds.</exception>
     static async Task<(int Exit, string Output)> RunAsync(string exe, params string[] args)

@@ -10,7 +10,7 @@ env -0 > "$FAKE_LOG.env"
 cat > "$FAKE_LOG.stdin"
 
 init='{"type":"system","subtype":"init","session_id":"sess-123","claude_code_version":"2.1.311","tools":[],"mcp_servers":[{"name":"ofnr","status":"connected"}]}'
-result='{"type":"result","subtype":"success","is_error":false,"result":"done","session_id":"sess-123","total_cost_usd":0.012,"usage":{"input_tokens":100,"output_tokens":20},"permission_denials":[],"structured_output":{"summary":"견적서 초안을 만들었습니다","files":["01_PLAN/OFNR-26031_QUOTE_v01.xlsx"],"needs_confirmation":["단가"],"next_steps":[]}}'
+result='{"type":"result","subtype":"success","is_error":false,"result":"done","session_id":"sess-123","total_cost_usd":0.012,"usage":{"input_tokens":100,"cache_creation_input_tokens":300,"cache_read_input_tokens":5000,"output_tokens":20},"permission_denials":[],"structured_output":{"summary":"견적서 초안을 만들었습니다","files":["01_PLAN/OFNR-26031_QUOTE_v01.xlsx"],"needs_confirmation":["단가"],"next_steps":[]}}'
 
 case "${FAKE_SCENARIO:-ok}" in
   auth_error)

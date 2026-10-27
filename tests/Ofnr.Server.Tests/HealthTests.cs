@@ -65,7 +65,9 @@ public sealed class HealthTests
         var codex = Engine(h, "codex");
         Assert.Equal(("0.163.0", "0.164.0", true, false), (codex.GetProperty("version").GetString(), codex.GetProperty("pinned").GetString(),
             codex.GetProperty("ok").GetBoolean(), codex.GetProperty("loggedIn").GetBoolean()));
-        Assert.Contains("0.164.0", codex.GetProperty("detail").GetString());
+        Assert.Equal(JsonValueKind.Null, claude.GetProperty("detail").ValueKind);
+        Assert.Equal("로그인이 필요합니다. PowerShell에서 codex login을 실행해 주세요. 고정 버전 0.164.0과 다릅니다. 엔진 점검으로 동작을 확인해 주세요.",
+            codex.GetProperty("detail").GetString());
         Assert.Equal([("excel", false), ("remote", true)], h.GetProperty("mcp").EnumerateArray().Select(c => (c.GetProperty("name").GetString(), c.GetProperty("ok").GetBoolean())));
         Assert.Contains(h.GetProperty("paths").EnumerateArray(), c => c.GetProperty("name").GetString() == "Git" && c.GetProperty("ok").GetBoolean());
     }

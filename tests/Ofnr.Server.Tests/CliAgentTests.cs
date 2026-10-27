@@ -60,6 +60,7 @@ public sealed class CliAgentTests : IDisposable
 
         var result = JsonSerializer.Deserialize<JsonElement>(response.Text);
         Assert.Equal("견적서 초안을 만들었습니다", result.GetProperty("summary").GetString());
+        Assert.Equal((5400L, 20L), (response.Usage?.InputTokenCount, response.Usage?.OutputTokenCount)); // cache reads and writes count as input
         var args = Args();
         Assert.Equal(PromptBuilder.ResultSchema.GetRawText(), args[Array.IndexOf(args, "--json-schema") + 1]);
         Assert.Equal(["-p", "--output-format", "stream-json", "--verbose", "--permission-prompts", "none"], args[..6]);
@@ -125,6 +126,17 @@ public sealed class CliAgentTests : IDisposable
 
             Assert.Equal(Encoding.UTF8.GetBytes("성수 팝업 견적서"), File.ReadAllBytes(Log + ".stdin"));
         }
+    }
+
+    [Fact]
+    public void Factory_refuses_a_cmd_or_ps1_engine()
+    {
+        var settings = new SettingsStore(new ConfigurationBuilder().AddInMemoryCollection([new("OFNR_DATA", Path.Combine(dir, "data"))]).Build());
+        (settings.Current.ClaudeExe, settings.Current.CodexExe) = (Path.Combine(dir, "claude.cmd"), Path.Combine(dir, "codex.ps1"));
+
+        foreach (var (engine, exe) in new[] { ("claude", settings.Current.ClaudeExe), ("codex", settings.Current.CodexExe) })
+            Assert.Equal($"스크립트(.cmd, .ps1)는 서버가 안전하게 실행할 수 없습니다. 설정에서 .exe 파일 경로를 지정해 주세요: {exe}",
+                Assert.Throws<InvalidOperationException>(() => new AgentFactory(settings).Create(engine, "test", dir, [])).Message);
     }
 
     [Fact]
