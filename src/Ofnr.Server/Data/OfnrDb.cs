@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace Ofnr.Server.Data;
 
@@ -22,6 +23,7 @@ public sealed class OfnrDb(DbContextOptions<OfnrDb> options) : DbContext(options
 
     protected override void ConfigureConventions(ModelConfigurationBuilder c)
     {
+        c.Properties<DateTimeOffset>().HaveConversion<UtcConverter>();
         c.Properties<ProjectStage>().HaveConversion<string>();
         c.Properties<ProjectStatus>().HaveConversion<string>();
         c.Properties<MailStatus>().HaveConversion<string>();
@@ -41,4 +43,7 @@ public sealed class OfnrDb(DbContextOptions<OfnrDb> options) : DbContext(options
         b.Entity<JobRun>().HasIndex(r => new { r.JobId, r.Seq }).IsUnique();
         b.Entity<JobEvent>().HasIndex(e => new { e.RunId, e.Seq }).IsUnique();
     }
+
+    // Npgsql writes only offset 0 to timestamptz; MimeKit mail dates and DateTimeOffset.Now on a KST PC carry +09:00.
+    sealed class UtcConverter() : ValueConverter<DateTimeOffset, DateTimeOffset>(v => v.ToUniversalTime(), v => v);
 }

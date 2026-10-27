@@ -1,6 +1,9 @@
+using System.Net.Http.Json;
 using System.Text.Json;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Ofnr.Server.Data;
+using Ofnr.Server.Security;
 
 namespace Ofnr.Server.Tests;
 
@@ -97,5 +100,37 @@ public sealed class DataTests
         var result = (await read.Jobs.SingleAsync(j => j.Id == job.Id, Ct)).Result!;
         Assert.Equal("견적서를 만들었습니다", result.Summary);
         Assert.Equal(["01_PLAN/OFNR-26001_QUOTE_v01.xlsx"], result.Files);
+    }
+
+    [Fact]
+    public async Task Kst_offsets_are_stored_as_utc()
+    {
+        using var t = TestDb.Create();
+        var kst = new DateTimeOffset(2026, 10, 27, 10, 0, 0, TimeSpan.FromHours(9));
+        var mail = NewMail("INBOX", 1, 1);
+        mail.ReceivedAt = kst;
+        await using (var db = t.Context())
+        {
+            db.AddRange(mail, new MailDraft { Subject = "회신", SentAt = kst });
+            await db.SaveChangesAsync(Ct);
+        }
+
+        await using var read = t.Context();
+        Assert.Equal(kst, (await read.MailMessages.SingleAsync(m => m.ReceivedAt == kst, Ct)).ReceivedAt);
+        Assert.Equal(kst, (await read.MailDrafts.SingleAsync(d => d.SentAt == kst, Ct)).SentAt);
+    }
+
+    [Fact]
+    public async Task Server_serves_health_when_postgres_is_down()
+    {
+        await using var host = new TestHost();
+        var down = host.WithWebHostBuilder(b => b.UseSetting("OFNR_DB", "Host=127.0.0.1;Port=1;Database=ofnr_down;Username=ofnr;Password=x"));
+        var client = down.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Ofnr-Token", LocalAccess.Token);
+
+        var db = (await client.GetFromJsonAsync<JsonElement>("/api/health", Ct)).GetProperty("db");
+
+        Assert.False(db.GetProperty("ok").GetBoolean());
+        Assert.StartsWith("데이터베이스에 연결하지 못했습니다: ", db.GetProperty("detail").GetString());
     }
 }

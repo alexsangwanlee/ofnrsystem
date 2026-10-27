@@ -23,6 +23,7 @@ public sealed class SettingsStoreTests
         var store = Create(null);
         Assert.Equal(store.Current.ProjectsRoot, Saved().GetProperty("projectsRoot").GetString());
         Assert.False(Saved().TryGetProperty("connectionString", out _)); // other defaults stay free to change in later releases
+        Assert.Contains("Database=ofnr_ops;", store.Current.ConnectionString); // the ICU ko-KR database setup.ps1 creates
     }
 
     [Fact]

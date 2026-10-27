@@ -2,6 +2,7 @@ using System.Net;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.FileProviders;
+using Npgsql;
 using Ofnr.Server;
 using Ofnr.Server.Data;
 using Ofnr.Server.Ops;
@@ -29,12 +30,22 @@ catch (InvalidDataException e)
     return 1;
 }
 Bootstrap.EnsureDataRoot(settings.Current, AppContext.BaseDirectory);
-using (var scope = app.Services.CreateScope())
+string? dbError = null;
+try
+{
+    using var scope = app.Services.CreateScope();
     await scope.ServiceProvider.GetRequiredService<OfnrDb>().Database.MigrateAsync();
+}
+catch (NpgsqlException e)
+{
+    // Keeps serving so the first-run check screen can say PostgreSQL is missing or stopped.
+    dbError = $"데이터베이스에 연결하지 못했습니다: {e.Message}";
+    Console.Error.WriteLine(dbError);
+}
 
 app.UseLocalAccess();
 
-app.MapGet("/api/health", () => Health.Build(settings.Current));
+app.MapGet("/api/health", () => Health.Build(settings.Current, dbError));
 
 if (app.Configuration["OFNR_WEB_ROOT"] is { Length: > 0 } webRoot)
 {

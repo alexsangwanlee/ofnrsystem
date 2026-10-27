@@ -11,7 +11,7 @@ public sealed class OfnrOptions
     public string TemplatesDir { get; set; } = "";
     public string BackupsDir { get; set; } = "";
     public int Port { get; set; } = 47821;
-    public string ConnectionString { get; set; } = "Host=127.0.0.1;Database=ofnr;Username=ofnr;Password=ofnr_dev";
+    public string ConnectionString { get; set; } = "Host=127.0.0.1;Database=ofnr_ops;Username=ofnr;Password=ofnr_dev";
     public string ClaudeExe { get; set; } = "claude";
     public string CodexExe { get; set; } = "codex";
     public string DefaultEngine { get; set; } = "claude";
