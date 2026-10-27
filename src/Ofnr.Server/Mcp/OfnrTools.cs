@@ -29,6 +29,9 @@ public sealed class OfnrTools(OfnrDb db, Approvals approvals, IOpsNotifier notif
 
     const int ThreadMailLimit = 4;
 
+    /// <summary>The <see cref="JobEvent.Raw"/> of a report_progress line: proof the call reached this server, which engine output never carries.</summary>
+    public const string ReportProgressRaw = "mcp report_progress";
+
     static Guid JobId(ClaimsPrincipal user) => Guid.Parse(user.FindFirstValue(JobTokens.JobClaim)!);
 
     Task<Job> JobAsync(ClaimsPrincipal user, CancellationToken ct)
@@ -104,7 +107,7 @@ public sealed class OfnrTools(OfnrDb db, Approvals approvals, IOpsNotifier notif
     {
         var jobId = JobId(user);
         var run = await LatestRunAsync(jobId, ct) ?? throw new McpException("실행 중인 작업이 없습니다.");
-        await JobEventLog.AppendAsync(db, notifier, jobId, run.Id, "text", message, ct);
+        await JobEventLog.AppendAsync(db, notifier, jobId, run.Id, "text", message, ct, raw: ReportProgressRaw);
         return "기록했습니다.";
     }
 

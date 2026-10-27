@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Ofnr.Server.Data;
 using Ofnr.Server.Jobs;
 using Ofnr.Server.Mail;
+using Ofnr.Server.Mcp;
 using Ofnr.Server.Realtime;
 using static Ofnr.Server.Projects.ProjectEndpoints;
 
@@ -52,9 +53,9 @@ public static class OpsEndpoints
             // A finished check is no result to review.
             await db.Jobs.Where(j => j.Id == job.Id).ExecuteUpdateAsync(s => s.SetProperty(j => j.Status, JobStatus.Done).SetProperty(j => j.UpdatedAt, DateTimeOffset.UtcNow), ct);
             await ops.JobUpdated(await JobEndpoints.DtoAsync(db, recipes, job.Id));
-            // The engine called the tool (its own text can echo the line) and the call reached this server (Codex can start a call it then cancels).
+            // The engine called the tool and the call reached this server: its own text can echo the line, and Codex can start a call it then cancels.
             var reported = await db.JobEvents.AnyAsync(e => e.JobId == job.Id && e.Kind == "tool" && e.Summary.StartsWith(CheckTool), ct)
-                && await db.JobEvents.AnyAsync(e => e.JobId == job.Id && e.Kind == "text" && e.Summary == CheckMessage, ct);
+                && await db.JobEvents.AnyAsync(e => e.JobId == job.Id && e.Raw == OfnrTools.ReportProgressRaw && e.Summary == CheckMessage, ct);
             return Results.Ok(reported
                 ? await health.RecordCheckAsync(engine, true, "엔진 점검을 통과했습니다.")
                 : await health.RecordCheckAsync(engine, false, "엔진이 대시보드 MCP 도구를 쓰지 못했습니다. 엔진의 MCP 설정과 승인 설정을 확인해 주세요."));

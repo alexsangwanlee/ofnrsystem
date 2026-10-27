@@ -11,9 +11,11 @@ public static class JobEventLog
     /// Saves the run's next event (seq = max + 1) and pushes it to the job's SignalR group. The job runner and the
     /// report_progress tool write events for the same run at the same time, so every JobEvent must be written here.
     /// </summary>
-    public static async Task<JobEventDto> AppendAsync(OfnrDb db, IOpsNotifier notifier, Guid jobId, Guid runId, string kind, string summary, CancellationToken ct = default)
+    /// <param name="raw">Set only by the server's own MCP tools, so their events can be told from what the engine printed.</param>
+    public static async Task<JobEventDto> AppendAsync(OfnrDb db, IOpsNotifier notifier, Guid jobId, Guid runId, string kind, string summary, CancellationToken ct = default,
+        string? raw = null)
     {
-        var e = new JobEvent { JobId = jobId, RunId = runId, Kind = kind, Summary = summary };
+        var e = new JobEvent { JobId = jobId, RunId = runId, Kind = kind, Summary = summary, Raw = raw };
         db.JobEvents.Add(e);
         for (var attempt = 1; ; attempt++)
         {

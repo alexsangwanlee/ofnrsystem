@@ -82,6 +82,11 @@ catch (InvalidDataException e)
     Console.Error.WriteLine(e.Message);
     return 1;
 }
+// Every program the server starts inherits its environment, and an app /api/open launches (SketchUp, Illustrator) runs the
+// scripts a job's MCP server sends. Configuration already holds OFNR_MAIL_PASSWORD, so only the token is read first.
+_ = LocalAccess.Token;
+Environment.SetEnvironmentVariable("OFNR_TOKEN", null);
+Environment.SetEnvironmentVariable("OFNR_MAIL_PASSWORD", null);
 // The installed app's resources folder; a plain build carries config/ and claude-plugin/ next to the server.
 Bootstrap.EnsureDataRoot(settings.Current, app.Configuration["OFNR_CONTENT"] is { Length: > 0 } content ? content : AppContext.BaseDirectory);
 try { app.Services.GetRequiredService<RecipeCatalog>(); }
@@ -151,12 +156,14 @@ app.Lifetime.ApplicationStarted.Register(() =>
     if (!sidecar)
     {
         Console.WriteLine($"OFNR listening http://127.0.0.1:{settings.Current.Port}");
+        settings.Listening.TrySetResult();
         return;
     }
-    // Before the ready line: the Host check and the jobs' MCP address both use this port.
+    // Before the ready line and the first job: the Host check and the jobs' MCP address both use this port.
     var port = new Uri(app.Urls.Single()).Port;
     app.Configuration["OFNR_PORT"] = port.ToString(CultureInfo.InvariantCulture);
     settings.Current.Port = port;
+    settings.Listening.TrySetResult();
     Console.WriteLine($"OFNR_READY http://127.0.0.1:{port}");
     // Stdin closes when the app exits or crashes, so the server never outlives it.
     new Thread(() =>

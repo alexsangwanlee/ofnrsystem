@@ -112,7 +112,7 @@ public sealed class HealthTests
         Assert.Equal(("claude", false), (silent.GetProperty("name").GetString(), silent.GetProperty("ok").GetBoolean()));
         Assert.Equal("엔진이 대시보드 MCP 도구를 쓰지 못했습니다. 엔진의 MCP 설정과 승인 설정을 확인해 주세요.", silent.GetProperty("detail").GetString());
 
-        // The engine only writes the line the check asks the tool to report.
+        // The engine starts the tool call, which never reaches the server (Codex cancels it, openai/codex#24135), and writes the line itself.
         h.Agents.Script = (_, ct) => Echo(ct);
         var echoed = await h.Send(HttpMethod.Post, "/api/health/engine-check/claude");
         Assert.Equal((false, "엔진이 대시보드 MCP 도구를 쓰지 못했습니다. 엔진의 MCP 설정과 승인 설정을 확인해 주세요."),
@@ -149,6 +149,7 @@ public sealed class HealthTests
     static async IAsyncEnumerable<AgentResponseUpdate> Echo([EnumeratorCancellation] CancellationToken ct)
     {
         await Task.Delay(1, ct);
+        yield return new(ChatRole.Assistant, [new AIContent { AdditionalProperties = new() { ["cli.tool"] = "mcp__ofnr__report_progress", ["cli.args"] = """{"message":"엔진 점검 완료"}""" } }]);
         yield return new(ChatRole.Assistant, [new TextReasoningContent("엔진 점검 완료")]);
         yield return new(ChatRole.Assistant, FakeAgents.Result);
     }

@@ -140,6 +140,8 @@ public sealed class JobQueue(IServiceScopeFactory scopes, SettingsStore settings
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        // Hosted services start before the web server, and a job's MCP address needs the port it binds.
+        await settings.Listening.Task.WaitAsync(stoppingToken);
         while (!stoppingToken.IsCancellationRequested)
         {
             try

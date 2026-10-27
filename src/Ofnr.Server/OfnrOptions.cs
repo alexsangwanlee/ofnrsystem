@@ -75,6 +75,9 @@ public sealed class SettingsStore
 
     public OfnrOptions Current { get; private set; }
 
+    /// <summary>Set once <see cref="OfnrOptions.Port"/> is the port the server listens on: the sidecar binds port 0 and learns its port only after start.</summary>
+    public TaskCompletionSource Listening { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
     public async Task SaveAsync(OfnrOptions options)
     {
         await SaveLock.WaitAsync();
