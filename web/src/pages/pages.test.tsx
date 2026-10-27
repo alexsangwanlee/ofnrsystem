@@ -1,16 +1,30 @@
 // @vitest-environment jsdom
-import type { ReactElement } from "react";
+import { useState, type ReactElement } from "react";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { FluentProvider, webLightTheme } from "@fluentui/react-components";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { OpsHandlers } from "../realtime";
-import type { JobDto, JobEventDto, MailDetailDto, MailSummaryDto, ProjectDto, RecipeDto, TodayDto } from "../types";
+import type {
+  AgentsDto,
+  JobDto,
+  JobEventDto,
+  MailDetailDto,
+  MailDraftDto,
+  MailSummaryDto,
+  ProjectDto,
+  RecipeDto,
+  SettingsDto,
+  TodayDto,
+} from "../types";
 import { ApprovalCard } from "../components/ApprovalCard";
 import { JobLog } from "../components/JobLog";
 import { NewJobDialog } from "../components/NewJobDialog";
+import { ProjectForm, toInput } from "../components/ProjectForm";
+import { Agents } from "./Agents";
 import { Board } from "./Board";
 import { Mail } from "./Mail";
+import { Settings } from "./Settings";
 import { Today } from "./Today";
 
 const ops = vi.hoisted(() => ({ last: {} as OpsHandlers, joinJob: vi.fn(async () => undefined) }));
@@ -22,16 +36,27 @@ vi.mock("../realtime", () => ({
   leaveJob: async () => undefined,
 }));
 
+// Fluent's MessageBar measures itself; jsdom has no ResizeObserver.
+globalThis.ResizeObserver ??= class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+};
+
 interface Call { method: string; path: string; body: unknown }
 
-/** Routes are "METHOD /path"; a GET with a query string also matches its route without the query. */
+/**
+ * Routes are "METHOD /path"; a GET with a query string also matches its route without the query.
+ * A function route runs on each call and returns the body, so a test can hold or count a request.
+ */
 function mockApi(routes: Record<string, unknown>) {
   const calls: Call[] = [];
   vi.stubGlobal("fetch", async (url: string, init: RequestInit = {}) => {
     const method = init.method ?? "GET";
     calls.push({ method, path: url, body: typeof init.body === "string" ? JSON.parse(init.body) : undefined });
     const key = `${method} ${url}`;
-    const hit = key in routes ? routes[key] : routes[key.split("?")[0]];
+    const route = key in routes ? routes[key] : routes[key.split("?")[0]];
+    const hit = typeof route === "function" ? await route() : route;
     return hit === undefined
       ? new Response(JSON.stringify({ error: "없는 경로입니다." }), { status: 404 })
       : new Response(JSON.stringify(hit), { status: 200 });
@@ -71,6 +96,7 @@ const project: ProjectDto = {
   folderPath: "D:/OFNR/Projects/2026/OFNR-26031_TNF-Seongsu",
   attentionCount: 1,
   runningCount: 0,
+  instructions: null,
 };
 
 const job = (over: Partial<JobDto> = {}): JobDto => ({
@@ -114,6 +140,49 @@ const event = (id: number, kind: JobEventDto["kind"], summary: string, jobId = "
   summary,
   at: "2026-10-27T01:00:00Z",
 });
+
+const mailDetail: MailDetailDto = {
+  ...mail,
+  to: "ceo@ofnr.co.kr",
+  cc: null,
+  textBody: "견적 부탁드립니다.",
+  htmlBody: null,
+  attachments: [],
+  extracted: { brand: "TNF", venue: "성수동" },
+  thread: [],
+};
+
+const draft: MailDraftDto = {
+  id: "d1",
+  replyToMailId: "m1",
+  projectId: "p1",
+  to: "kim@client.co.kr",
+  cc: null,
+  subject: "RE: 성수 팝업 견적 요청드립니다",
+  body: "안녕하세요",
+  attachments: [],
+  author: "ceo",
+  status: "draft",
+  createdAt: "2026-10-27T02:00:00Z",
+  sentAt: null,
+};
+
+const mailRoutes: Record<string, unknown> = {
+  "GET /api/mail": [mail],
+  "GET /api/mail/m1": mailDetail,
+  "GET /api/projects": [project],
+  "GET /api/projects/p1/files": [],
+  "GET /api/mail/drafts": [],
+  "POST /api/mail/drafts": draft,
+  "POST /api/mail/drafts/d1/send": { ...draft, status: "sent" },
+};
+
+/** Opens the reply editor on mail m1 with a body typed in. */
+async function openReply() {
+  renderAt(<Mail />, "/mail/m1", "/mail/:id");
+  fireEvent.click(await screen.findByRole("button", { name: "답장 쓰기" }));
+  fireEvent.change(await screen.findByLabelText(/^본문/), { target: { value: "안녕하세요" } });
+}
 
 afterEach(() => {
   cleanup();
@@ -163,39 +232,7 @@ describe("pages", () => {
   });
 
   it("Mail_send_requires_confirmation", async () => {
-    const detail: MailDetailDto = {
-      ...mail,
-      to: "ceo@ofnr.co.kr",
-      cc: null,
-      textBody: "견적 부탁드립니다.",
-      htmlBody: null,
-      attachments: [],
-      extracted: { brand: "TNF", venue: "성수동" },
-      thread: [],
-    };
-    const draft = {
-      id: "d1",
-      replyToMailId: "m1",
-      projectId: "p1",
-      to: "kim@client.co.kr",
-      cc: null,
-      subject: "RE: 성수 팝업 견적 요청드립니다",
-      body: "안녕하세요",
-      attachments: [],
-      author: "ceo",
-      status: "draft",
-      createdAt: "2026-10-27T02:00:00Z",
-      sentAt: null,
-    };
-    const calls = mockApi({
-      "GET /api/mail": [mail],
-      "GET /api/mail/m1": detail,
-      "GET /api/projects": [project],
-      "GET /api/projects/p1/files": [],
-      "GET /api/mail/drafts": [],
-      "POST /api/mail/drafts": draft,
-      "POST /api/mail/drafts/d1/send": { ...draft, status: "sent" },
-    });
+    const calls = mockApi(mailRoutes);
     renderAt(<Mail />, "/mail/m1", "/mail/:id");
 
     fireEvent.click(await screen.findByRole("button", { name: "답장 쓰기" }));
@@ -271,6 +308,208 @@ describe("pages", () => {
 
     fireEvent.change(recipe, { target: { value: "free" } });
     expect((screen.getByRole("radio", { name: "Codex" }) as HTMLInputElement).checked).toBe(true);
+  });
+
+  it("Mail_send_confirm_cannot_send_twice", async () => {
+    let release = () => {};
+    const held = new Promise<void>((r) => (release = r));
+    const calls = mockApi({ ...mailRoutes, "POST /api/mail/drafts": async () => (await held, draft) });
+    await openReply();
+    fireEvent.click(screen.getByRole("button", { name: "보내기" }));
+
+    const confirm = within(await screen.findByRole("dialog")).getByRole("button", { name: "보내기" });
+    fireEvent.click(confirm);
+    await waitFor(() => expect((confirm as HTMLButtonElement).disabled).toBe(true));
+    fireEvent.click(confirm);
+    release();
+
+    await waitFor(() => expect(calls.some((c) => c.path === "/api/mail/drafts/d1/send")).toBe(true));
+    expect(calls.filter((c) => c.method === "POST")).toHaveLength(2);
+  });
+
+  it("Mail_reply_waits_for_saved_drafts_and_offers_retry", async () => {
+    const { "GET /api/mail/drafts": _, ...withoutDrafts } = mailRoutes;
+    mockApi(withoutDrafts);
+    await openReply();
+
+    expect(await screen.findByRole("button", { name: "다시 시도" })).toBeTruthy();
+    expect((screen.getByRole("button", { name: "보내기" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "초안 저장" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("Mail_unsorted_filter_lists_new_and_needs_reply_without_project", async () => {
+    const unlinked = { projectId: null, jobNo: null };
+    const calls = mockApi({
+      "GET /api/mail": [
+        mail,
+        { ...mail, ...unlinked, id: "m2", subject: "새 문의", status: "New" },
+        { ...mail, ...unlinked, id: "m3", subject: "AI가 답장 필요로 분류한 문의", status: "NeedsReply" },
+        { ...mail, ...unlinked, id: "m4", subject: "끝난 메일", status: "Done" },
+      ],
+      "GET /api/projects": [project],
+    });
+    renderAt(<Mail />, "/mail", "/mail");
+    await screen.findByText("새 문의");
+
+    fireEvent.click(screen.getByRole("tab", { name: "미분류" }));
+    await waitFor(() =>
+      expect(within(screen.getByRole("list", { name: "메일 목록" })).getAllByRole("button").map((b) => b.id)).toEqual([
+        "mail-m2",
+        "mail-m3",
+      ]),
+    );
+    expect(calls.some((c) => c.path.includes("status="))).toBe(false);
+  });
+
+  it("Board_create_after_projectUpdated_shows_one_card", async () => {
+    const created: ProjectDto = { ...project, id: "p2", name: "새 팝업", stage: "Inquiry", clientId: null, clientName: null };
+    mockApi({
+      "GET /api/projects": [project],
+      "GET /api/clients": [],
+      // The server broadcasts projectUpdated before it answers the POST.
+      "POST /api/projects": () => {
+        act(() => ops.last.projectUpdated?.(created));
+        return created;
+      },
+    });
+    renderAt(<Board />);
+    await screen.findByText("성수 팝업");
+
+    fireEvent.click(screen.getByRole("button", { name: "새 프로젝트" }));
+    fireEvent.change(await screen.findByLabelText(/프로젝트명/), { target: { value: "새 팝업" } });
+    await waitFor(() => expect((screen.getByRole("button", { name: "저장" }) as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByRole("button", { name: "저장" }));
+
+    await waitFor(() => expect(screen.queryByRole("button", { name: "저장" })).toBeNull());
+    expect(within(screen.getByRole("region", { name: "문의" })).getAllByRole("article")).toHaveLength(1);
+  });
+
+  it("ProjectForm_edit_sends_back_instructions", async () => {
+    mockApi({ "GET /api/clients": [{ id: "c1", name: "TNF", mailDomains: [] }] });
+    const onSubmit = vi.fn(async () => undefined);
+    renderAt(
+      <ProjectForm
+        open
+        editing
+        title="프로젝트 수정"
+        seed={toInput({ ...project, instructions: "주말 설치 금지" })}
+        onClose={() => undefined}
+        onSubmit={onSubmit}
+      />,
+    );
+
+    const save = screen.getByRole("button", { name: "저장" }) as HTMLButtonElement;
+    await waitFor(() => expect(save.disabled).toBe(false));
+    fireEvent.click(save);
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ clientId: "c1", instructions: "주말 설치 금지" }));
+  });
+
+  it("ProjectForm_retry_after_failed_save_does_not_create_client_twice", async () => {
+    const calls = mockApi({ "GET /api/clients": [], "POST /api/clients": { id: "c-new", name: "노스페이스", mailDomains: [] } });
+    const onSubmit = vi.fn().mockRejectedValueOnce(new Error("저장하지 못했습니다.")).mockResolvedValue(undefined);
+    renderAt(
+      <ProjectForm
+        open
+        title="새 프로젝트"
+        seed={{ name: "성수 팝업", clientName: "노스페이스" }}
+        onClose={() => undefined}
+        onSubmit={onSubmit}
+      />,
+    );
+
+    const save = screen.getByRole("button", { name: "저장" }) as HTMLButtonElement;
+    await waitFor(() => expect(save.disabled).toBe(false));
+    fireEvent.click(save);
+    await screen.findByText("저장하지 못했습니다.");
+    fireEvent.click(save);
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(2));
+    expect(onSubmit).toHaveBeenLastCalledWith(expect.objectContaining({ clientId: "c-new" }));
+    expect(calls.filter((c) => c.method === "POST" && c.path === "/api/clients")).toHaveLength(1);
+  });
+
+  it("NewJobDialog_reopens_with_the_chip_recipe_and_never_offers_skill_learning", async () => {
+    const recipes: RecipeDto[] = [
+      { id: "quote", name: "견적서", stage: "Planning", engines: ["claude"], lock: "office", needsProject: true },
+      { id: "proposal", name: "제안서", stage: "Planning", engines: ["claude"], lock: "office", needsProject: true },
+      { id: "document", name: "문서", stage: "Planning", engines: ["claude"], lock: null, needsProject: true },
+      { id: "skill-learning", name: "스킬 학습", stage: null, engines: ["claude", "codex"], lock: null, needsProject: false },
+      { id: "free", name: "자유 지시", stage: null, engines: ["claude", "codex"], lock: null, needsProject: false },
+    ];
+    mockApi({ "GET /api/recipes": recipes, "GET /api/settings": { defaultEngine: "claude" } });
+    function Chips() {
+      const [recipeId, setRecipeId] = useState<string>();
+      return (
+        <>
+          <button onClick={() => setRecipeId("quote")}>견적서 칩</button>
+          <button onClick={() => setRecipeId("document")}>문서 칩</button>
+          <NewJobDialog open={!!recipeId} onClose={() => setRecipeId(undefined)} projectId="p1" stage="Planning" recipeId={recipeId} />
+        </>
+      );
+    }
+    renderAt(<Chips />);
+
+    fireEvent.click(screen.getByText("견적서 칩"));
+    const first = (await screen.findByLabelText(/작업 종류/)) as HTMLSelectElement;
+    expect(first.value).toBe("quote");
+    expect([...first.options].map((o) => o.value)).toEqual(["quote", "proposal", "document", "free"]);
+    fireEvent.change(first, { target: { value: "proposal" } });
+    fireEvent.change(screen.getByLabelText(/지시 내용/), { target: { value: "A안으로" } });
+    fireEvent.click(screen.getByRole("button", { name: "취소" }));
+    await waitFor(() => expect(screen.queryByLabelText(/작업 종류/)).toBeNull());
+
+    fireEvent.click(screen.getByText("문서 칩"));
+    expect(((await screen.findByLabelText(/작업 종류/)) as HTMLSelectElement).value).toBe("document");
+    expect((screen.getByLabelText(/지시 내용/) as HTMLTextAreaElement).value).toBe("");
+  });
+
+  it("Agents_empty_lists_have_an_action", async () => {
+    const agents: AgentsDto = { running: [], queued: [], locks: [], costs: { monthUsd: 0, byRecipe: [] }, engines: [] };
+    mockApi({ "GET /api/agents": agents, "GET /api/recipes": [] });
+    renderAt(<Agents />);
+
+    expect(await screen.findByText("앱 잠금이 없습니다")).toBeTruthy();
+    expect(screen.getByText("엔진 정보가 없습니다")).toBeTruthy();
+    expect(screen.getByText("이번 달에 실행한 작업이 없습니다")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "설정 열기" })).toBeTruthy();
+  });
+
+  it("Settings_rejects_empty_paths_and_bad_ports", async () => {
+    const settings: SettingsDto = {
+      dataRoot: "C:/OFNR",
+      projectsRoot: "D:/OFNR/Projects",
+      jobsRoot: "C:/OFNR/jobs",
+      pluginDir: "C:/OFNR/claude-plugin",
+      templatesDir: "C:/OFNR/templates",
+      backupsDir: "C:/OFNR/backups",
+      port: 47821,
+      claudeExe: "claude",
+      codexExe: "codex",
+      defaultEngine: "claude",
+      maxConcurrentJobs: 2,
+      mailSyncMinutes: 5,
+      autoTriage: true,
+      appendSentCopy: true,
+      claudeModel: null,
+      codexModel: null,
+      pgDumpPath: "pg_dump",
+      mail: { address: "ceo@ofnr.co.kr", imapHost: "imap.worksmobile.com", imapPort: 993, smtpHost: "smtp.worksmobile.com", smtpPort: 465, sentFolder: null },
+    };
+    const calls = mockApi({ "GET /api/settings": settings });
+    renderAt(<Settings />);
+
+    const templates = await screen.findByLabelText(/회사 양식 폴더/);
+    fireEvent.change(templates, { target: { value: " " } });
+    fireEvent.blur(templates);
+    expect(await screen.findByText("경로를 입력해 주세요.")).toBeTruthy();
+    const imapPort = screen.getAllByLabelText(/^포트/)[0];
+    fireEvent.change(imapPort, { target: { value: "" } });
+    fireEvent.blur(imapPort);
+    expect(await screen.findByText("1에서 65535 사이로 입력해 주세요.")).toBeTruthy();
+
+    fireEvent.click(screen.getAllByRole("button", { name: "변경 저장" })[0]);
+    expect(calls.some((c) => c.method === "PUT")).toBe(false);
   });
 
   it("No_em_dash_in_source", () => {

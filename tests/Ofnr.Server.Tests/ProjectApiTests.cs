@@ -132,8 +132,10 @@ public sealed class ProjectApiTests(TestHost host) : IClassFixture<TestHost>
     [Fact]
     public async Task Update_project_keeps_folder_and_logs_activity()
     {
-        var p = await CreateProject(new { name = "더현대 팝업" });
+        var p = await CreateProject(new { name = "더현대 팝업", instructions = "주말 설치 금지" });
         var id = p.GetProperty("id").GetGuid();
+        // The web edit form sends back the instructions it received; without them in the DTO every edit wiped them.
+        Assert.Equal("주말 설치 금지", p.GetProperty("instructions").GetString());
 
         using (var scope = host.Services.CreateScope())
         {
@@ -147,10 +149,11 @@ public sealed class ProjectApiTests(TestHost host) : IClassFixture<TestHost>
             await db.SaveChangesAsync(Ct);
         }
 
-        var detail = await Send(HttpMethod.Put, $"/api/projects/{id}", new { name = "더현대 서울 팝업", slug = "Other", venue = "여의도", contractAmount = 30_000_000 });
+        var detail = await Send(HttpMethod.Put, $"/api/projects/{id}", new { name = "더현대 서울 팝업", slug = "Other", venue = "여의도", contractAmount = 30_000_000, instructions = "철수는 오전 9시 이후" });
 
         var updated = detail.GetProperty("project");
         Assert.Equal("더현대 서울 팝업", updated.GetProperty("name").GetString());
+        Assert.Equal("철수는 오전 9시 이후", updated.GetProperty("instructions").GetString());
         Assert.Equal(p.GetProperty("folderPath").GetString(), updated.GetProperty("folderPath").GetString());
         Assert.Equal(30_000_000, updated.GetProperty("contractAmount").GetInt64());
         Assert.Equal(2, detail.GetProperty("activity").GetArrayLength());

@@ -89,12 +89,11 @@ export function Board() {
   const [moved, setMoved] = useState<StageMoveResult>();
   const [jobFor, setJobFor] = useState<{ project: ProjectDto; recipeId: string }>();
   const { error, run } = useAction();
+  // The server sends projectUpdated before the create response, so both paths must add only once.
+  const upsert = (p: ProjectDto) =>
+    projects.update((l) => (l.some((x) => x.id === p.id) ? l.map((x) => (x.id === p.id ? p : x)) : [...l, p]));
 
-  useOps({
-    projectUpdated: (p) =>
-      projects.update((l) => (l.some((x) => x.id === p.id) ? l.map((x) => (x.id === p.id ? p : x)) : [...l, p])),
-    connected: projects.reload,
-  });
+  useOps({ projectUpdated: upsert, connected: projects.reload });
 
   const move = (p: ProjectDto, stage: Stage) => {
     if (p.stage === stage) return;
@@ -214,8 +213,7 @@ export function Board() {
         seed={{ name: "", stage: formStage }}
         onClose={() => setFormStage(undefined)}
         onSubmit={async (input) => {
-          const p = await api<ProjectDto>("/api/projects", { method: "POST", body: JSON.stringify(input) });
-          projects.update((l) => [...l, p]);
+          upsert(await api<ProjectDto>("/api/projects", { method: "POST", body: JSON.stringify(input) }));
         }}
       />
       <NewJobDialog

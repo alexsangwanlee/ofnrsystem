@@ -62,9 +62,22 @@ export function NewJobDialog({
   const [picked, setPicked] = useState<string>();
   const [engine, setEngine] = useState<Engine>();
   const [instruction, setInstruction] = useState("");
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    // The dialog stays mounted between chips and projects; every open starts from the caller's recipe.
+    setWasOpen(open);
+    if (open) {
+      setPicked(undefined);
+      setEngine(undefined);
+      setInstruction("");
+    }
+  }
 
+  // skill-learning writes the company skills, so it starts only from 검토 의견, never with mail text attached.
   const options = (recipes.data ?? []).filter(
-    (r) => r.id === recipeId || ((!stage || !r.stage || r.stage === stage) && (projectId || !r.needsProject)),
+    (r) =>
+      r.id !== "skill-learning" &&
+      (r.id === recipeId || ((!stage || !r.stage || r.stage === stage) && (projectId || !r.needsProject))),
   );
   const recipe = options.find((r) => r.id === (picked ?? recipeId)) ?? options[0];
   const engines = recipe?.engines ?? [];
@@ -84,7 +97,6 @@ export function NewJobDialog({
           mailId: mail?.id ?? null,
         }),
       });
-      setInstruction("");
       onClose();
       if (onCreated) onCreated(job);
       else navigate(`/jobs/${job.id}`);

@@ -398,7 +398,7 @@ SignalR hub `/hubs/ops`, server-to-client methods: `jobUpdated(JobDto)`, `jobEve
 - `README.md` (Korean): what it is, install steps, first run (Claude and Codex login, NAVER WORKS IMAP and external app password, project folder, templates), daily use, skill learning, update, backup and restore, troubleshooting, phase 2 notes. `CLAUDE.md`: architecture map, commands (`dotnet test`, `npm --prefix web test`), rules from Global Constraints, where to add a recipe, a skill, an endpoint.
 - Linux check: `cargo check` (host Linux target) in `desktop/src-tauri` must pass (install `libwebkit2gtk-4.1-dev libsoup-3.0-dev librsvg2-dev` with apt if missing; if apt is blocked, record that `cargo check` was skipped).
 
-- [ ] **Step 1: Write a failing check**: `scripts/check-desktop.sh` runs `cargo check --manifest-path desktop/src-tauri/Cargo.toml` and `node -e` validation that `tauri.conf.json` has `bundle.externalBin` containing `binaries/ofnr-server` and `plugins.updater.endpoints[0]` ending with `latest.json`.
+- [ ] **Step 1: Write a failing check**: `scripts/check-desktop.sh` runs `cargo check --manifest-path desktop/src-tauri/Cargo.toml` and `node -e` validation that `tauri.conf.json` has `bundle.externalBin` containing `binaries/ofnr-server`, `plugins.updater.endpoints[0]` ending with `latest.json`, and `app.windows[0].dragDropEnabled === false`.
 - [ ] **Step 2: Run** `bash scripts/check-desktop.sh`. Expected: FAIL (files missing).
 - [ ] **Step 3: Implement.**
 - [ ] **Step 4: Run** `bash scripts/check-desktop.sh`. Expected: PASS.

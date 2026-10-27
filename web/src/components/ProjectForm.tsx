@@ -20,7 +20,7 @@ import { Dismiss24Regular } from "@fluentui/react-icons";
 import { api } from "../api";
 import { stageLabel } from "../format";
 import { STAGES, type ClientDto, type ProjectDto, type ProjectInput, type Stage } from "../types";
-import { useAction, useApi, useUi, useValidation } from "./ui";
+import { ErrorBar, useAction, useApi, useUi, useValidation } from "./ui";
 
 const useStyles = makeStyles({
   form: { display: "flex", flexDirection: "column", gap: tokens.spacingVerticalM },
@@ -62,7 +62,7 @@ export function toInput(p: ProjectDto): ProjectSeed {
     quoteAmount: p.quoteAmount,
     contractAmount: p.contractAmount,
     costAmount: p.costAmount,
-    instructions: p.instructions ?? null,
+    instructions: p.instructions,
   };
 }
 
@@ -131,15 +131,18 @@ export function ProjectForm({
   const amount = (k: string) => (v[k].trim() ? Number(v[k].replace(/,/g, "")) : null);
 
   const submit = () => {
-    if (!val.check()) return;
+    // Without the client list an existing client name would be created again.
+    if (!clients.data || !val.check()) return;
+    const known = clients.data;
     void run(async () => {
       const name = v.clientName.trim();
-      let clientId = name ? clients.data?.find((c) => c.name === name)?.id : null;
+      let clientId = name ? known.find((c) => c.name === name)?.id : null;
       if (name && !clientId) {
         const created = await api<ClientDto>("/api/clients", {
           method: "POST",
           body: JSON.stringify({ name, mailDomains: [] }),
         });
+        clients.update((l) => [...l, created]);
         clientId = created.id;
       }
       await onSubmit({
@@ -235,12 +238,13 @@ export function ProjectForm({
           <Field label="지침 (선택)" hint="AI가 이 프로젝트의 모든 작업에서 지킬 내용입니다.">
             <Textarea rows={4} resize="vertical" {...field("instructions")} />
           </Field>
+          {clients.error && <ErrorBar message={clients.error} onRetry={clients.reload} />}
           {error && <Text className={ui.error}>{error}</Text>}
           <button type="submit" hidden />
         </form>
       </DrawerBody>
       <DrawerFooter>
-        <Button appearance="primary" disabled={busy} onClick={submit}>
+        <Button appearance="primary" disabled={busy || !clients.data} onClick={submit}>
           저장
         </Button>
         <Button onClick={onClose}>취소</Button>

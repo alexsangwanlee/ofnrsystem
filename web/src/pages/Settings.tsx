@@ -35,7 +35,9 @@ const useStyles = makeStyles({
   bad: { color: tokens.colorStatusDangerForeground1, flexShrink: 0 },
 });
 
-const ascii = (v: string) => (/^[\x20-\x7e]*$/.test(v) ? undefined : "영문, 숫자로 된 경로를 입력해 주세요.");
+const required = (v: string) => (v.trim() ? undefined : "경로를 입력해 주세요.");
+const ascii = (v: string) => required(v) ?? (/^[\x20-\x7e]*$/.test(v) ? undefined : "영문, 숫자로 된 경로를 입력해 주세요.");
+const port = (n: number) => (Number.isInteger(n) && n >= 1 && n <= 65535 ? undefined : "1에서 65535 사이로 입력해 주세요.");
 
 export function Settings() {
   const s = useStyles();
@@ -72,6 +74,10 @@ function SettingsForm({ saved, onSaved }: { saved: SettingsDto; onSaved: (d: Set
   const errors = {
     projectsRoot: ascii(v.projectsRoot),
     jobsRoot: ascii(v.jobsRoot),
+    templatesDir: required(v.templatesDir),
+    backupsDir: required(v.backupsDir),
+    imapPort: port(v.mail.imapPort),
+    smtpPort: port(v.mail.smtpPort),
     maxConcurrentJobs: v.maxConcurrentJobs >= 1 && v.maxConcurrentJobs <= 8 ? undefined : "1에서 8 사이로 입력해 주세요.",
     mailSyncMinutes: v.mailSyncMinutes >= 1 ? undefined : "1분 이상으로 입력해 주세요.",
   };
@@ -91,9 +97,13 @@ function SettingsForm({ saved, onSaved }: { saved: SettingsDto; onSaved: (d: Set
     },
   });
   const mailText = (name: keyof MailAccountDto) => ({
+    id: val.id(name),
     value: String(v.mail[name] ?? ""),
-    onChange: (_: unknown, d: { value: string }) =>
-      setMail({ [name]: typeof saved.mail[name] === "number" ? Number(d.value) : d.value || (name === "sentFolder" ? null : "") }),
+    onBlur: val.blur(name),
+    onChange: (_: unknown, d: { value: string }) => {
+      val.edit(name);
+      setMail({ [name]: typeof saved.mail[name] === "number" ? Number(d.value) : d.value || (name === "sentFolder" ? null : "") });
+    },
   });
 
   const put = (next: SettingsDto, message: string) =>
@@ -131,10 +141,10 @@ function SettingsForm({ saved, onSaved }: { saved: SettingsDto; onSaved: (d: Set
             <Field label="작업 실행 폴더" hint="AI가 작업마다 쓰는 임시 폴더입니다. 영문 경로만 쓸 수 있습니다." validationMessage={val.message("jobsRoot")}>
               <Input {...text("jobsRoot")} />
             </Field>
-            <Field label="회사 양식 폴더" hint="견적서, 제안서 양식 파일을 두는 곳입니다.">
+            <Field label="회사 양식 폴더" hint="견적서, 제안서 양식 파일을 두는 곳입니다." validationMessage={val.message("templatesDir")}>
               <Input {...text("templatesDir")} />
             </Field>
-            <Field label="백업 폴더" hint="데이터베이스를 하루 한 번 백업하고 최근 14개를 남깁니다.">
+            <Field label="백업 폴더" hint="데이터베이스를 하루 한 번 백업하고 최근 14개를 남깁니다." validationMessage={val.message("backupsDir")}>
               <Input {...text("backupsDir")} />
             </Field>
             {footer}
@@ -174,13 +184,13 @@ function SettingsForm({ saved, onSaved }: { saved: SettingsDto; onSaved: (d: Set
               <Field label="IMAP 서버">
                 <Input {...mailText("imapHost")} />
               </Field>
-              <Field label="포트">
+              <Field label="포트" validationMessage={val.message("imapPort")}>
                 <Input type="number" {...mailText("imapPort")} />
               </Field>
               <Field label="SMTP 서버">
                 <Input {...mailText("smtpHost")} />
               </Field>
-              <Field label="포트">
+              <Field label="포트" validationMessage={val.message("smtpPort")}>
                 <Input type="number" {...mailText("smtpPort")} />
               </Field>
             </div>

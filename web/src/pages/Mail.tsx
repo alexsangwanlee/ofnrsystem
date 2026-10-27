@@ -34,9 +34,11 @@ import { MAIL_STATUS, formatDate, formatSize, formatTime } from "../format";
 import { useOps } from "../realtime";
 import type { DraftInput, FileDto, MailDetailDto, MailDraftDto, MailSummaryDto, ProjectDto } from "../types";
 
-const FILTERS = [
+const FILTERS: { value: string; label: string; query: string; keep?: (m: MailSummaryDto) => boolean }[] = [
   { value: "all", label: "전체", query: "" },
-  { value: "new", label: "미분류", query: "&status=New" },
+  // Same rule as 오늘 (New or NeedsReply without a project); the API filters one status only, so this filters here.
+  // shortcut: only the newest 200 mails are checked, add an unlinked filter to GET /api/mail if older ones go missing.
+  { value: "new", label: "미분류", query: "", keep: (m) => !m.projectId && (m.status === "New" || m.status === "NeedsReply") },
   { value: "reply", label: "답장 필요", query: "&status=NeedsReply" },
 ];
 
@@ -148,7 +150,14 @@ export function LinkProjectMenu({ mail, onLinked }: { mail: MailSummaryDto; onLi
         </MenuTrigger>
         <MenuPopover>
           <MenuList className={s.menu}>
-            {!projects.data && <MenuItem disabled>{projects.error ?? "프로젝트를 불러오는 중입니다."}</MenuItem>}
+            {!projects.data &&
+              (projects.error ? (
+                <MenuItem persistOnClick onClick={projects.reload}>
+                  {projects.error} 다시 시도
+                </MenuItem>
+              ) : (
+                <MenuItem disabled>프로젝트를 불러오는 중입니다.</MenuItem>
+              ))}
             {projects.data?.length === 0 && <MenuItem disabled>진행 중인 프로젝트가 없습니다.</MenuItem>}
             {list.map((p) => (
               <MenuItem key={p.id} secondaryContent={suggested(p) ? "추천" : undefined} onClick={() => link(p.id)}>
@@ -178,8 +187,9 @@ export function Mail() {
     return () => clearTimeout(t);
   }, [q]);
 
-  const status = FILTERS.find((f) => f.value === filter)!.query;
+  const { query: status, keep } = FILTERS.find((f) => f.value === filter)!;
   const list = useApi<MailSummaryDto[]>(`/api/mail?take=200${status}${query ? `&q=${encodeURIComponent(query)}` : ""}`);
+  const shown = keep && list.data ? { ...list, data: list.data.filter(keep) } : list;
   const projects = useApi<ProjectDto[]>("/api/projects");
   const replace = (m: MailSummaryDto) => list.update((l) => l.map((x) => (x.id === m.id ? m : x)));
   useOps({
@@ -237,7 +247,7 @@ export function Mail() {
       {sync.error && <ErrorBar message={sync.error} />}
       <div className={s.panes}>
         <div className={s.listPane}>
-          <Async state={list} rows={8}>
+          <Async state={shown} rows={8}>
             {(mails) =>
               mails.length === 0 ? (
                 <div className={ui.card}>
@@ -591,14 +601,14 @@ function ReplyEditor({
       setNote("초안을 저장했습니다.");
     });
   };
+  // The dialog stays open with its button disabled until the send ends, so a second click cannot send twice.
   const send = () =>
     void run(async () => {
-      setConfirming(false);
       const d = await persist();
       await api(`/api/mail/drafts/${d.id}/send`, { method: "POST" });
       onSent();
       onClose();
-    });
+    }).then(() => setConfirming(false));
 
   const toggleFile = (path: string, on: boolean) =>
     setV((x) => ({ ...x, attachments: on ? [...x.attachments, path] : x.attachments.filter((a) => a !== path) }));
@@ -646,12 +656,14 @@ function ReplyEditor({
             </Async>
           )}
         </Field>
+        {drafts.error && <ErrorBar message={drafts.error} onRetry={drafts.reload} />}
         {error && <ErrorBar message={error} />}
+        {/* Until the saved drafts load, saving would create a second draft next to the AI's. */}
         <div className={ui.actions}>
-          <Button appearance="primary" disabled={busy} onClick={() => val.check() && setConfirming(true)}>
+          <Button appearance="primary" disabled={busy || !drafts.data} onClick={() => val.check() && setConfirming(true)}>
             보내기
           </Button>
-          <Button disabled={busy} onClick={saveDraft}>
+          <Button disabled={busy || !drafts.data} onClick={saveDraft}>
             초안 저장
           </Button>
           <Button appearance="subtle" onClick={onClose}>
@@ -664,6 +676,7 @@ function ReplyEditor({
         title="메일을 보낼까요?"
         body={`이 메일을 보냅니다. 받는 사람: ${v.to.trim()}`}
         confirm="보내기"
+        busy={busy}
         onConfirm={send}
         onCancel={() => setConfirming(false)}
       />

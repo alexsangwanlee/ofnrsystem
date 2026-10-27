@@ -107,6 +107,7 @@ export function JobDetail() {
             }
           >
             {action.error && <ErrorBar message={action.error} />}
+            {project.error && <ErrorBar message={project.error} onRetry={project.reload} />}
             {pending.length > 0 && (
               <div className={s.cards}>
                 {pending.map((a) => (
@@ -182,6 +183,7 @@ export function JobDetail() {
                     </Select>
                   </Field>
                 </div>
+                {skills.error && <ErrorBar message={skills.error} onRetry={skills.reload} />}
                 {note && <Caption1 aria-live="polite">{note}</Caption1>}
                 <div className={ui.actions}>
                   <Button appearance="primary" disabled={action.busy} onClick={() => void sendFeedback()}>

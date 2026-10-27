@@ -281,6 +281,7 @@ export function Confirm({
   body,
   confirm,
   danger,
+  busy,
   onConfirm,
   onCancel,
 }: {
@@ -289,6 +290,7 @@ export function Confirm({
   body: ReactNode;
   confirm: string;
   danger?: boolean;
+  busy?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
@@ -301,7 +303,7 @@ export function Confirm({
           <DialogContent>{body}</DialogContent>
           <DialogActions>
             <Button onClick={onCancel}>취소</Button>
-            <Button appearance="primary" className={danger ? s.danger : undefined} onClick={onConfirm}>
+            <Button appearance="primary" className={danger ? s.danger : undefined} disabled={busy} onClick={onConfirm}>
               {confirm}
             </Button>
           </DialogActions>

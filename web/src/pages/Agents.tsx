@@ -13,19 +13,20 @@ const useStyles = makeStyles({
   num: { fontVariantNumeric: "tabular-nums", flexShrink: 0 },
 });
 
-function JobRows({ jobs, empty }: { jobs: JobDto[]; empty: string }) {
+function Empty({ title, body, to, label }: { title: string; body: string; to: string; label: string }) {
   const ui = useUi();
   const navigate = useNavigate();
+  return (
+    <div className={ui.card}>
+      <EmptyState title={title} body={body} action={<Button onClick={() => navigate(to)}>{label}</Button>} />
+    </div>
+  );
+}
+
+function JobRows({ jobs, empty }: { jobs: JobDto[]; empty: string }) {
+  const ui = useUi();
   if (jobs.length === 0)
-    return (
-      <div className={ui.card}>
-        <EmptyState
-          title={empty}
-          body="프로젝트나 메일에서 AI에게 작업을 맡기면 여기에 표시됩니다."
-          action={<Button onClick={() => navigate("/projects")}>프로젝트 보기</Button>}
-        />
-      </div>
-    );
+    return <Empty title={empty} body="프로젝트나 메일에서 AI에게 작업을 맡기면 여기에 표시됩니다." to="/projects" label="프로젝트 보기" />;
   return (
     <ul className={ui.list}>
       {jobs.map((j) => (
@@ -81,61 +82,84 @@ export function Agents() {
               </div>
               <div className={s.column}>
                 <Section title="앱 잠금">
-                  <ul className={ui.list}>
-                    {a.locks.map((l) => (
-                      <li key={l.name} className={ui.row}>
-                        <Body1 className={ui.grow}>
-                          <span>
-                            {lockLabel(l.name)}:{" "}
-                            {l.holderJobId ? (
-                              <RouterLink to={`/jobs/${l.holderJobId}`}>{`작업 #${l.holderJobId.slice(0, 8)}`}</RouterLink>
-                            ) : (
-                              "사용 가능"
-                            )}
-                            {l.holderJobId && " 사용 중"}
-                            {l.waiting > 0 && `, 대기 ${l.waiting}`}
-                          </span>
-                        </Body1>
-                      </li>
-                    ))}
-                  </ul>
+                  {a.locks.length === 0 ? (
+                    <Empty
+                      title="앱 잠금이 없습니다"
+                      body="SketchUp, Illustrator, Office를 쓰는 작업이 실행되면 여기에 사용 상태가 표시됩니다."
+                      to="/projects"
+                      label="프로젝트 보기"
+                    />
+                  ) : (
+                    <ul className={ui.list}>
+                      {a.locks.map((l) => (
+                        <li key={l.name} className={ui.row}>
+                          <Body1 className={ui.grow}>
+                            <span>
+                              {lockLabel(l.name)}:{" "}
+                              {l.holderJobId ? (
+                                <RouterLink to={`/jobs/${l.holderJobId}`}>{`작업 #${l.holderJobId.slice(0, 8)}`}</RouterLink>
+                              ) : (
+                                "사용 가능"
+                              )}
+                              {l.holderJobId && " 사용 중"}
+                              {l.waiting > 0 && `, 대기 ${l.waiting}`}
+                            </span>
+                          </Body1>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </Section>
                 <Section title="엔진">
                   {check.error && <ErrorBar message={check.error} />}
-                  <ul className={ui.list}>
-                    {a.engines.map((e) => (
-                      <li key={e.name} className={ui.row}>
-                        <div className={ui.grow}>
-                          <Body1>
-                            {e.name} {e.version ?? "버전 확인 불가"}
-                          </Body1>
-                          <Caption1 className={ui.muted}>{e.detail ?? e.path}</Caption1>
-                        </div>
-                        {!e.ok && (
-                          <Badge appearance="tint" shape="rounded" color="danger">
-                            오류
-                          </Badge>
-                        )}
-                        {e.ok && !e.loggedIn && (
-                          <Badge appearance="tint" shape="rounded" color="warning">
-                            로그인 필요
-                          </Badge>
-                        )}
-                        {e.version && e.version !== e.pinned && (
-                          <Badge appearance="tint" shape="rounded" color="warning">
-                            고정 버전 {e.pinned}과 다름
-                          </Badge>
-                        )}
-                        <Button size="small" disabled={check.busy} onClick={() => runCheck(e.name)}>
-                          점검
-                        </Button>
-                      </li>
-                    ))}
-                  </ul>
+                  {a.engines.length === 0 ? (
+                    <Empty
+                      title="엔진 정보가 없습니다"
+                      body="설정에서 Claude Code와 Codex 실행 파일 경로를 확인해 주세요."
+                      to="/settings"
+                      label="설정 열기"
+                    />
+                  ) : (
+                    <ul className={ui.list}>
+                      {a.engines.map((e) => (
+                        <li key={e.name} className={ui.row}>
+                          <div className={ui.grow}>
+                            <Body1>
+                              {e.name} {e.version ?? "버전 확인 불가"}
+                            </Body1>
+                            <Caption1 className={ui.muted}>{e.detail ?? e.path}</Caption1>
+                          </div>
+                          {!e.ok && (
+                            <Badge appearance="tint" shape="rounded" color="danger">
+                              오류
+                            </Badge>
+                          )}
+                          {e.ok && !e.loggedIn && (
+                            <Badge appearance="tint" shape="rounded" color="warning">
+                              로그인 필요
+                            </Badge>
+                          )}
+                          {e.version && e.version !== e.pinned && (
+                            <Badge appearance="tint" shape="rounded" color="warning">
+                              고정 버전 {e.pinned}과 다름
+                            </Badge>
+                          )}
+                          <Button size="small" disabled={check.busy} onClick={() => runCheck(e.name)}>
+                            점검
+                          </Button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </Section>
                 <Section title="이번 달 레시피별 비용">
                   {a.costs.byRecipe.length === 0 ? (
-                    <Body1 className={ui.muted}>이번 달에 실행한 작업이 없습니다.</Body1>
+                    <Empty
+                      title="이번 달에 실행한 작업이 없습니다"
+                      body="작업을 맡기면 레시피별 추정 비용이 여기에 쌓입니다."
+                      to="/projects"
+                      label="프로젝트 보기"
+                    />
                   ) : (
                     <ul className={ui.list}>
                       {a.costs.byRecipe.map((r) => (
