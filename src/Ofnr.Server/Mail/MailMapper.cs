@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.RegularExpressions;
 using AngleSharp.Dom;
 using AngleSharp.Html.Dom;
@@ -16,12 +17,27 @@ public static partial class MailMapper
     [GeneratedRegex(@"OFNR-\d{5}", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex JobNumber();
 
+    // shortcut: HTML with more tags is not kept, since parsing nested tags takes quadratic time; raise it if real mail hits it.
+    const int MaxHtmlTags = 20_000;
+
+    static readonly UTF8Encoding StrictUtf8 = new(false, throwOnInvalidBytes: true);
+
+    /// <summary>Called once at startup, before any mail is parsed: EUC-KR and ks_c_5601-1987 parts decode, and raw 8-bit headers that are not UTF-8 (legacy Korean mailers) read as CP949.</summary>
+    public static void RegisterKoreanEncodings()
+    {
+        Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+        ParserOptions.Default.CharsetEncoding = Encoding.GetEncoding(949);
+    }
+
     public static MailMessage Map(MimeMessage m, string folder, uint uidValidity, uint uid, bool outgoing)
     {
+        // A text part without a charset that is not UTF-8 is legacy Korean, not the Latin-1 MimeKit would fall back to.
+        foreach (var t in m.BodyParts.OfType<TextPart>())
+            if (!t.TryDetectEncoding(out _, out _) && !IsUtf8(t)) t.ContentType.CharsetEncoding = Encoding.GetEncoding(949);
         var from = m.From.Mailboxes.FirstOrDefault();
         string[] references = [.. m.References];
         var subject = m.Subject ?? "";
-        using var html = m.HtmlBody is { } raw ? Sanitize(raw) : null;
+        using var html = m.HtmlBody is { } raw && raw.Count(c => c == '<') <= MaxHtmlTags ? Sanitize(raw) : null;
         return new MailMessage
         {
             Folder = folder,
@@ -40,7 +56,7 @@ public static partial class MailMapper
             // Without a Date header MimeKit gives MinValue, which would sort the mail below every other.
             ReceivedAt = m.Date == DateTimeOffset.MinValue ? DateTimeOffset.UtcNow : m.Date,
             // HTML-only mail (common from Korean webmail) still needs text for search, triage and prompts.
-            TextBody = m.TextBody ?? html?.Body?.GetInnerText(),
+            TextBody = m.TextBody ?? (html?.Body is { } body ? Text(body) : null),
             HtmlBody = html?.Body?.InnerHtml,
             Attachments = [.. Attachments(m).Select((a, i) => new MailAttachment { Index = i, FileName = FileName(a), Size = Size(a) })],
         };
@@ -58,8 +74,11 @@ public static partial class MailMapper
         return byDomain.Count == 1 ? byDomain[0] : null;
     }
 
-    /// <summary>The attachments in the order <see cref="MailAttachment.Index"/> numbers them.</summary>
-    public static IReadOnlyList<MimeEntity> Attachments(MimeMessage m) => [.. m.Attachments];
+    /// <summary>
+    /// The attachments in the order <see cref="MailAttachment.Index"/> numbers them: parts marked attachment, and parts with a file name,
+    /// since Apple Mail sends attached files inline and some mailers name a part only in Content-Type.
+    /// </summary>
+    public static IReadOnlyList<MimeEntity> Attachments(MimeMessage m) => [.. m.BodyParts.Where(p => p.IsAttachment || p is MimePart { FileName: not null })];
 
     public static string FileName(MimeEntity a) => a.ContentDisposition?.FileName ?? a.ContentType.Name ?? (a is MessagePart ? "첨부 메일.eml" : "첨부 파일");
 
@@ -77,6 +96,21 @@ public static partial class MailMapper
         return s.Length;
     }
 
+    static bool IsUtf8(TextPart t)
+    {
+        try { t.GetText(StrictUtf8); return true; }
+        catch (DecoderFallbackException) { return false; }
+    }
+
+    // GetInnerText, TextContent and the sanitizer's PostProcessNode (Node.Normalize) recurse per element: deeply nested mail would
+    // overflow the stack and end the server. GetDescendants walks without recursion.
+    static string Text(IElement body) => string.Concat(body.GetDescendants().Select(n => n switch
+    {
+        IText t => t.Data,
+        IElement { LocalName: "br" or "p" or "div" or "li" or "tr" or "blockquote" } => "\n",
+        _ => "",
+    })).Trim();
+
     static IHtmlDocument Sanitize(string html)
     {
         var s = new HtmlSanitizer();
@@ -84,12 +118,12 @@ public static partial class MailMapper
         s.AllowedTags.Remove("img");
         s.AllowedAttributes.Remove("src");
         s.AllowedAttributes.Remove("style");
-        s.PostProcessNode += (_, e) =>
+        var doc = s.SanitizeDom(html);
+        foreach (var a in doc.GetDescendants().OfType<IHtmlAnchorElement>())
         {
-            if (e.Node is not IHtmlAnchorElement a) return;
             a.SetAttribute("target", "_blank");
             a.SetAttribute("rel", "noopener");
-        };
-        return s.SanitizeDom(html);
+        }
+        return doc;
     }
 }

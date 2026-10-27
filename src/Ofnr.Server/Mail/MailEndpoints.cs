@@ -1,4 +1,5 @@
 using System.Text.Json;
+using MailKit;
 using Microsoft.EntityFrameworkCore;
 using MimeKit;
 using Ofnr.Server.Data;
@@ -80,6 +81,7 @@ public static class MailEndpoints
                     return Error(409, "메일함이 바뀌어 첨부를 가져오지 못했습니다. 메일을 다시 동기화해 주세요.");
                 message = await imap.FetchAsync((uint)mail.Uid);
             }
+            catch (MessageNotFoundException) { return Error(409, "이 메일이 메일함에 더 이상 없습니다. 웹메일에서 옮기거나 지웠는지 확인해 주세요."); }
             catch (Exception e) when (e is not OperationCanceledException) { return Error(409, $"메일 서버에 연결하지 못했습니다: {e.Message}"); }
             var attachments = MailMapper.Attachments(message);
             if (index < 0 || index >= attachments.Count) return Error(404, "첨부 파일을 찾을 수 없습니다.");

@@ -114,6 +114,9 @@ public sealed class MailApiTests
         await h.Send(HttpMethod.Post, $"/api/mail/{mail.Id}/attachments/1/save", expected: HttpStatusCode.NotFound);
         var unlinked = await AddMail(h, "미분류");
         Assert.Equal("먼저 메일을 프로젝트에 연결해 주세요.", Error(await h.Send(HttpMethod.Post, $"/api/mail/{unlinked.Id}/attachments/0/save", expected: HttpStatusCode.BadRequest)));
+        var gone = await AddMail(h, "옮긴 메일", edit: m => (m.Uid, m.ProjectId) = (44, p.Id));
+        Assert.Equal("이 메일이 메일함에 더 이상 없습니다. 웹메일에서 옮기거나 지웠는지 확인해 주세요.",
+            Error(await h.Send(HttpMethod.Post, $"/api/mail/{gone.Id}/attachments/0/save", expected: HttpStatusCode.Conflict)));
         imap.UidValidity = 2;
         Assert.Equal("메일함이 바뀌어 첨부를 가져오지 못했습니다. 메일을 다시 동기화해 주세요.",
             Error(await h.Send(HttpMethod.Post, $"/api/mail/{mail.Id}/attachments/0/save", expected: HttpStatusCode.Conflict)));

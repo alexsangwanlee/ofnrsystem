@@ -1,5 +1,4 @@
 using System.Net;
-using System.Text;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.EntityFrameworkCore;
@@ -30,8 +29,7 @@ builder.Services.AddSignalR().AddJsonProtocol(o => o.PayloadSerializerOptions.Co
 // Binding failures throw in every environment so the handler below can answer them in the { error } shape.
 builder.Services.Configure<RouteHandlerOptions>(o => o.ThrowOnBadRequest = true);
 builder.Services.AddSingleton<IOpsNotifier, OpsNotifier>();
-// EUC-KR and ks_c_5601-1987 mail would otherwise decode as mojibake.
-Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+MailMapper.RegisterKoreanEncodings();
 builder.Services.AddSingleton<SecretStore>();
 builder.Services.AddDbContext<OfnrDb>((sp, o) =>
     o.UseNpgsql(sp.GetRequiredService<SecretStore>().WithDbPassword(sp.GetRequiredService<SettingsStore>().Current.ConnectionString)));

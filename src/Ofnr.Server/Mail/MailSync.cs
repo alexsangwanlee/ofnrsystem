@@ -68,7 +68,8 @@ public sealed class MailSync(IServiceScopeFactory scopes, SettingsStore settings
                 if (settings.Current.Mail.Address is { Length: > 0 }) await SyncNowAsync(stop);
             }
             catch (MailException e) { logger.LogWarning("Mail sync failed: {Message}", e.Message); }
-            try { await Task.Delay(TimeSpan.FromMinutes(Math.Max(1, settings.Current.MailSyncMinutes)), stop); }
+            // Task.Delay throws above about 49 days, which would stop the whole host.
+            try { await Task.Delay(TimeSpan.FromMinutes(Math.Clamp(settings.Current.MailSyncMinutes, 1, 1440)), stop); }
             catch (OperationCanceledException) { return; }
         }
     }
@@ -91,7 +92,8 @@ public sealed class MailSync(IServiceScopeFactory scopes, SettingsStore settings
         }
         catch (Exception e) when (!ct.IsCancellationRequested)
         {
-            var message = DbError(e) is { } db ? $"데이터베이스에 연결하지 못했습니다: {db.Message}" : $"메일 서버에 연결하지 못했습니다: {e.Message}";
+            var message = e is MailException ? e.Message
+                : DbError(e) is { } db ? $"데이터베이스에 연결하지 못했습니다: {db.Message}" : $"메일 서버에 연결하지 못했습니다: {e.Message}";
             last = new("메일", false, message);
             throw new MailException(message, e);
         }
@@ -115,39 +117,51 @@ public sealed class MailSync(IServiceScopeFactory scopes, SettingsStore settings
         var projects = (await db.Projects.Where(p => p.Status == ProjectStatus.Active)
                 .Select(p => new { p.Id, p.JobNo, Domains = p.Client!.MailDomains }).ToListAsync(ct))
             .Select(p => (p.Id, p.JobNo, p.Domains ?? [])).ToList();
-        var added = new List<Guid>();
+        var added = 0;
         foreach (var chunk in uids.Chunk(Batch))
         {
+            var changed = new List<Guid>();
             foreach (var uid in chunk)
             {
                 var m = MailMapper.Map(await imap.FetchAsync(uid), folder, info.UidValidity, uid, outgoing);
-                if (await IsStoredAsync(db, m, ct)) continue;
+                if (await StoredAsync(db, m, ct) is { } stored)
+                {
+                    // Mail to herself, or a Cc to herself, that INBOX brought in first: the copy in Sent shows she wrote it.
+                    if (outgoing && !stored.Outgoing)
+                    {
+                        (stored.Outgoing, stored.Status) = (true, stored.Status == MailStatus.New ? MailStatus.Done : stored.Status);
+                        changed.Add(stored.Id);
+                    }
+                    continue;
+                }
                 if (MailMapper.MatchProject(m, projects) is { } projectId) (m.ProjectId, m.Status) = (projectId, MailStatus.Linked);
                 else if (outgoing) m.Status = MailStatus.Done;
                 db.MailMessages.Add(m);
-                added.Add(m.Id);
+                changed.Add(m.Id);
+                added++;
             }
             state.LastUid = chunk[^1];
             await db.SaveChangesAsync(ct);
+            // Per chunk, so mail already saved is announced even when a later chunk fails.
+            foreach (var dto in await db.MailMessages.Where(m => changed.Contains(m.Id)).ToSummaries().ToListAsync(ct)) await notifier.MailUpdated(dto);
         }
         await db.SaveChangesAsync(ct); // a new or reset state when nothing was fetched
-        foreach (var dto in await db.MailMessages.Where(m => added.Contains(m.Id)).ToSummaries().ToListAsync(ct)) await notifier.MailUpdated(dto);
-        return added.Count;
+        return added;
     }
 
     /// <summary>
-    /// True when the mail is already stored: the same UID, or the same Message-ID in any folder (mail to oneself sits in INBOX
-    /// and Sent). A row of this folder from before a UIDVALIDITY change takes the new UID, so attachments can still be fetched.
+    /// The stored row of this mail: the same UID, or the same Message-ID in any folder (mail to oneself sits in INBOX and Sent).
+    /// A row of this folder under another UID (a UIDVALIDITY change, or mail moved out and back in webmail) takes the new one,
+    /// so attachments can still be fetched.
     /// </summary>
-    static async Task<bool> IsStoredAsync(OfnrDb db, MailMessage m, CancellationToken ct)
+    static async Task<MailMessage?> StoredAsync(OfnrDb db, MailMessage m, CancellationToken ct)
     {
-        if (await db.MailMessages.AnyAsync(x => x.Folder == m.Folder && x.UidValidity == m.UidValidity && x.Uid == m.Uid, ct)) return true;
-        if (m.MessageId is null) return false;
+        if (await db.MailMessages.FirstOrDefaultAsync(x => x.Folder == m.Folder && x.UidValidity == m.UidValidity && x.Uid == m.Uid, ct) is { } same) return same;
+        if (m.MessageId is null) return null;
         var stored = db.MailMessages.Local.FirstOrDefault(x => x.MessageId == m.MessageId)
             ?? await db.MailMessages.FirstOrDefaultAsync(x => x.MessageId == m.MessageId, ct);
-        if (stored is null) return false;
-        if (stored.Folder == m.Folder && stored.UidValidity != m.UidValidity) (stored.UidValidity, stored.Uid) = (m.UidValidity, m.Uid);
-        return true;
+        if (stored?.Folder == m.Folder) (stored.UidValidity, stored.Uid) = (m.UidValidity, m.Uid);
+        return stored;
     }
 }
 

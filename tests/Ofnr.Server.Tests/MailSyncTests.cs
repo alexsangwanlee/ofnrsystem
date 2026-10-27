@@ -1,3 +1,4 @@
+using MailKit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -57,9 +58,10 @@ public sealed class FakeImap : IImapSource
         }
     }
 
+    /// <summary>Like MailKit for a UID the server no longer has. A message put as null is found by search but gone on fetch.</summary>
     public Task<MimeMessage> FetchAsync(uint uid)
     {
-        lock (folders) return Task.FromResult(folders[open][uid]);
+        lock (folders) return Task.FromResult(folders[open].GetValueOrDefault(uid) ?? throw new MessageNotFoundException("The IMAP server did not return the requested message."));
     }
 
     public Task AppendSeenAsync(string folder, MimeMessage m)
@@ -95,13 +97,15 @@ public sealed class MailSyncTests
         {
             Db = connectionString is null ? TestDb.Create() : null;
             File.WriteAllText(Path.Combine(data, "settings.json"), """{ "mail": { "address": "ceo@ofnr.kr" } }""");
-            var settings = new SettingsStore(new ConfigurationBuilder().AddInMemoryCollection([new("OFNR_DATA", data)]).Build());
+            Settings = new SettingsStore(new ConfigurationBuilder().AddInMemoryCollection([new("OFNR_DATA", data)]).Build());
             services = new ServiceCollection()
                 .AddDbContext<OfnrDb>(o => o.UseNpgsql(connectionString ?? Db!.ConnectionString))
                 .AddSingleton<IImapSource>(Imap)
                 .BuildServiceProvider();
-            Sync = new MailSync(services.GetRequiredService<IServiceScopeFactory>(), settings, Notifier, NullLogger<MailSync>.Instance);
+            Sync = new MailSync(services.GetRequiredService<IServiceScopeFactory>(), Settings, Notifier, NullLogger<MailSync>.Instance);
         }
+
+        public SettingsStore Settings { get; }
 
         public TestDb? Db { get; }
         public FakeImap Imap { get; } = new();
@@ -165,11 +169,16 @@ public sealed class MailSyncTests
         var inbound = rows.Single(m => m.MessageId == "a@tnf.co.kr");
         Assert.Equal((project, MailStatus.Linked, false, "INBOX"), (inbound.ProjectId, inbound.Status, inbound.Outgoing, inbound.Folder));
         Assert.True(rows.Single(m => m.MessageId == "r@ofnr.kr").Outgoing);
+        // INBOX brought the mail to herself in first; its copy in Sent shows she wrote it, so it is not left as unsorted mail.
+        var self = rows.Single(m => m.MessageId == "self@ofnr.kr");
+        Assert.Equal((true, MailStatus.Done), (self.Outgoing, self.Status));
         // The first sync looks back 30 days, later ones only past the last UID.
         Assert.Equal([(0u, true), (6u, false)], rig.Imap.Searches.Where(s => s.Folder == "INBOX").Select(s => (s.After, s.Since is not null)));
         var state = await rig.State("INBOX");
         Assert.Equal((1L, 6L), (state.UidValidity, state.LastUid));
-        Assert.Equal(3, rig.Notifier.Calls.OfType<MailSummaryDto>().Count());
+        var notified = rig.Notifier.Calls.OfType<MailSummaryDto>().ToList();
+        Assert.Equal(4, notified.Count);
+        Assert.Equal(MailStatus.Done, notified.Last(d => d.Id == self.Id).Status);
         Assert.True(rig.Sync.Health.Ok);
     }
 
@@ -202,6 +211,25 @@ public sealed class MailSyncTests
         Assert.Equal((0u, true), rig.Imap.Searches.Where(s => s.Folder == "INBOX").Select(s => (s.After, s.Since is not null)).Last());
         var state = await rig.State("INBOX");
         Assert.Equal((2L, 2L), (state.UidValidity, state.LastUid));
+
+        // Moved out of INBOX and back in webmail: the same UIDVALIDITY, a new UID.
+        rig.Imap.Put("INBOX", 3, Msg("a@tnf.co.kr", "견적 요청"));
+        Assert.Equal(0, await rig.Sync.SyncNowAsync(Ct));
+        Assert.Equal(3L, (await rig.Rows()).Single(m => m.MessageId == "a@tnf.co.kr").Uid);
+    }
+
+    [Fact]
+    public async Task Each_saved_chunk_is_announced_when_a_later_one_fails()
+    {
+        using var rig = new Rig();
+        for (uint uid = 1; uid <= 50; uid++) rig.Imap.Put("INBOX", uid, Msg($"{uid}@tnf.co.kr", "견적 요청"));
+        rig.Imap.Put("INBOX", 51, null!); // deleted between search and fetch
+
+        await Assert.ThrowsAsync<MailException>(() => rig.Sync.SyncNowAsync(Ct));
+
+        Assert.Equal(50, (await rig.Rows()).Count);
+        Assert.Equal(50, rig.Notifier.Calls.OfType<MailSummaryDto>().Count());
+        Assert.Equal(50L, (await rig.State("INBOX")).LastUid);
     }
 
     [Fact]
@@ -217,8 +245,14 @@ public sealed class MailSyncTests
         noDb.Imap.Put("INBOX", 1, Msg("a@tnf.co.kr", "견적 요청"));
         Assert.StartsWith("데이터베이스에 연결하지 못했습니다: ", (await Assert.ThrowsAsync<MailException>(() => noDb.Sync.SyncNowAsync(Ct))).Message);
 
+        using var noPassword = new Rig();
+        noPassword.Imap.Fail = new MailException("메일 비밀번호가 설정되지 않았습니다.");
+        Assert.Equal("메일 비밀번호가 설정되지 않았습니다.", (await Assert.ThrowsAsync<MailException>(() => noPassword.Sync.SyncNowAsync(Ct))).Message);
+        Assert.Equal("메일 비밀번호가 설정되지 않았습니다.", noPassword.Sync.Health.Detail);
+
         foreach (var rig in new[] { noServer, noDb })
         {
+            rig.Settings.Current.MailSyncMinutes = 100_000; // above what Task.Delay accepts
             var before = rig.Imap.Lists;
             await rig.Sync.StartAsync(Ct);
             await JobHost.WaitFor(() => rig.Imap.Lists > before); // the loop's first sync started and fails

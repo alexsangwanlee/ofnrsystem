@@ -9,8 +9,8 @@ public sealed class MailMapperTests
 {
     public static readonly string Fixtures = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../Fixtures"));
 
-    // Program.cs registers this at startup; the parser needs it before MailMapper ever runs.
-    static MailMapperTests() => Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+    // Program.cs calls this at startup; the parser needs it before MailMapper ever runs.
+    static MailMapperTests() => MailMapper.RegisterKoreanEncodings();
 
     public static MimeMessage Load(string name) => MimeMessage.Load(Path.Combine(Fixtures, name));
 
@@ -37,6 +37,81 @@ public sealed class MailMapperTests
         Assert.Equal(new DateTimeOffset(2026, 10, 26, 1, 15, 0, TimeSpan.Zero), m.ReceivedAt.ToUniversalTime());
         var a = Assert.Single(m.Attachments);
         Assert.Equal((0, "도면.pdf", 13L), (a.Index, a.FileName, a.Size));
+    }
+
+    [Fact]
+    public void Raw_8bit_korean_headers_and_charsetless_body_decode()
+    {
+        // Legacy Korean mailers send CP949 bytes without RFC 2047 encoding or a charset parameter.
+        var m = Map(MimeMessage.Load(new MemoryStream(Encoding.GetEncoding(949).GetBytes("""
+            From: kim@tnf.co.kr
+            Subject: 견적 요청드립니다
+            Content-Type: multipart/mixed; boundary="b"
+
+            --b
+            Content-Type: text/plain
+
+            본문 견적
+            --b
+            Content-Type: application/pdf; name="도면.pdf"
+            Content-Disposition: attachment; filename="도면.pdf"
+
+            %PDF
+            --b--
+            """)), TestContext.Current.CancellationToken));
+
+        Assert.Equal("견적 요청드립니다", m.Subject);
+        Assert.Equal("본문 견적", m.TextBody?.Trim());
+        Assert.Equal("도면.pdf", Assert.Single(m.Attachments).FileName);
+    }
+
+    [Fact]
+    public void Inline_parts_with_a_file_name_are_attachments()
+    {
+        // Apple Mail sends attached files inline; some mailers name a part only in Content-Type.
+        var m = Map(MimeMessage.Load(new MemoryStream(Encoding.ASCII.GetBytes("""
+            Content-Type: multipart/mixed; boundary="b"
+
+            --b
+            Content-Type: text/plain; charset=utf-8
+
+            plan attached
+            --b
+            Content-Type: application/pdf; name="plan.pdf"
+            Content-Disposition: inline; filename="plan.pdf"
+
+            %PDF
+            --b
+            Content-Type: image/jpeg; name="site.jpg"
+
+            jpg
+            --b--
+            """)), TestContext.Current.CancellationToken));
+
+        Assert.Equal(["plan.pdf", "site.jpg"], m.Attachments.Select(a => a.FileName));
+        Assert.Equal("plan attached", m.TextBody?.Trim());
+    }
+
+    [Fact]
+    public void Deeply_nested_html_neither_overflows_the_stack_nor_stalls()
+    {
+        static MimeMessage Nested(int depth) => new() { Body = new TextPart("html") { Text = string.Concat(Enumerable.Repeat("<div>", depth)) + "안녕하세요" } };
+        MailMessage? deep = null, huge = null;
+        Exception? error = null;
+        // 1 MB, the default stack of a .NET thread on Windows; a stack overflow would end the whole server.
+        var t = new Thread(() =>
+        {
+            try { (deep, huge) = (Map(Nested(5000)), Map(Nested(30000))); }
+            catch (Exception e) { error = e; }
+        }, 1024 * 1024);
+        t.Start();
+        t.Join();
+
+        Assert.Null(error);
+        Assert.Equal("안녕하세요", deep!.TextBody?.Trim());
+        Assert.NotNull(deep.HtmlBody);
+        // Parsing nested tags takes quadratic time, so very large HTML is not shown.
+        Assert.Null(huge!.HtmlBody);
     }
 
     [Fact]
