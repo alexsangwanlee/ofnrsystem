@@ -122,6 +122,7 @@ catch (Exception e)
     };
     Console.Error.WriteLine(health.MigrateError ?? $"데이터베이스에 연결하지 못했습니다: {e.Message}");
 }
+if (args.Contains("--seed-demo")) await DemoSeed.RunAsync(app.Services); // screenshots and scripts/e2e.sh
 
 app.UseLocalAccess();
 app.Use(async (ctx, next) =>

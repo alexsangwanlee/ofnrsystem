@@ -52,6 +52,7 @@ Linux 개발 PC에서 .NET은 `export PATH=$HOME/.dotnet:$PATH`가 필요할 수
 | 화면 빌드 (타입 검사 포함) | `npm --prefix web run build` |
 | 데스크톱 셸 점검 | `bash scripts/check-desktop.sh` (tauri.conf.json 모양, index.html의 `<style>`, 문서의 dash, `cargo check`, Rust 테스트) |
 | 개발 실행 (Linux) | `bash scripts/dev.sh` |
+| 끝에서 끝 점검 (Linux) | `bash scripts/e2e.sh`: 샘플 데이터(`--seed-demo`)로 모든 화면을 찍어 `docs/screens/`에 두고, Claude Code에 로그인되어 있으면 실제 작업 하나와 엔진 점검을 돌린다. `E2E_LIVE=0`이면 실제 작업을 건너뛴다 |
 | 개발 실행 (Windows 앱) | `scripts\publish-sidecar.ps1` 후 `npm --prefix desktop run tauri dev` |
 | 배포 | 버전을 올리고 `git tag vX.Y.Z && git push origin vX.Y.Z` (README의 업데이트 항목) |
 
