@@ -21,7 +21,7 @@ public sealed record ProjectInput(
 public sealed record ProjectDto(
     Guid Id, string JobNo, string Name, string Slug, Guid? ClientId, string? ClientName, ProjectStage Stage, ProjectStatus Status, string? Venue,
     DateOnly? InstallDate, DateOnly? OpenDate, DateOnly? EndDate, DateOnly? TeardownDate,
-    long? QuoteAmount, long? ContractAmount, long? CostAmount, string FolderPath, int AttentionCount, int RunningCount);
+    long? QuoteAmount, long? ContractAmount, long? CostAmount, string FolderPath, int AttentionCount, int RunningCount, string? Instructions);
 
 public sealed record ProjectDetailDto(ProjectDto Project, List<MailSummaryDto> Mails, List<JobDto> Jobs, List<ArtifactDto> Artifacts, List<ActivityDto> Activity);
 

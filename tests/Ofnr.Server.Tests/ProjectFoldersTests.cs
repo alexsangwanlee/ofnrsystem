@@ -43,10 +43,20 @@ public sealed class ProjectFoldersTests : IDisposable
     }
 
     [Fact]
+    public void NextVersionedName_counts_other_casings_because_windows_names_are_case_insensitive()
+    {
+        foreach (var name in new[] { "OFNR-26031_QUOTE_V01.xlsx", "ofnr-26031_quote_v02.xlsx" })
+            File.WriteAllText(Path.Combine(root, name), "x");
+
+        Assert.Equal("OFNR-26031_QUOTE_v03.xlsx", ProjectFolders.NextVersionedName(root, "OFNR-26031", "QUOTE", "xlsx"));
+    }
+
+    [Fact]
     public void ParseVersioned_reads_job_doc_and_version()
     {
         Assert.Equal(("OFNR-26031", "QUOTE", 3), ProjectFolders.ParseVersioned("OFNR-26031_QUOTE_v03_FINAL.xlsx"));
         Assert.Equal(("OFNR-26031", "PROP", 12), ProjectFolders.ParseVersioned("OFNR-26031_PROP_v12.pptx"));
+        Assert.Equal(("OFNR-26031", "QUOTE", 2), ProjectFolders.ParseVersioned("ofnr-26031_quote_V02.xlsx"));
         Assert.Null(ProjectFolders.ParseVersioned("견적서.xlsx"));
     }
 

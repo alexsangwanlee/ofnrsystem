@@ -1,8 +1,11 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Ofnr.Server.Data;
+using Ofnr.Server.Security;
 
 namespace Ofnr.Server.Tests;
 
@@ -67,6 +70,63 @@ public sealed class ProjectApiTests(TestHost host) : IClassFixture<TestHost>
     {
         var res = await Send(HttpMethod.Post, "/api/projects", new { name = " " }, HttpStatusCode.BadRequest);
         Assert.Equal("프로젝트 이름을 입력해 주세요.", res.GetProperty("error").GetString());
+    }
+
+    [Fact]
+    public async Task Concurrent_creates_get_distinct_numbers_and_one_folder_each()
+    {
+        var yearDir = Path.Combine(ProjectsRoot, DateTimeOffset.Now.Year.ToString());
+        Directory.CreateDirectory(yearDir);
+        var before = Directory.GetDirectories(yearDir);
+
+        var created = await Task.WhenAll(Enumerable.Range(1, 8).Select(n => CreateProject(new { name = $"Popup {n}" })));
+
+        var jobNos = created.Select(p => p.GetProperty("jobNo").GetString()).ToList();
+        Assert.Equal(8, jobNos.Distinct().Count());
+        Assert.Equal(8, Directory.GetDirectories(yearDir).Except(before).Count());
+    }
+
+    [Fact]
+    public async Task Bad_request_shapes_return_korean_error()
+    {
+        var p = await CreateProject(new { name = "형식 팝업" });
+        var stage = $"/api/projects/{p.GetProperty("id")}/stage";
+        const string shape = "요청 형식이 올바르지 않습니다.";
+        var bad = new (HttpMethod method, string path, string? json, string error)[]
+        {
+            (HttpMethod.Post, "/api/projects", """{"name":"테스트 팝업","stage":99}""", shape),
+            (HttpMethod.Post, "/api/projects", """{"name":"테스트 팝업","stage":"99"}""", shape),
+            (HttpMethod.Post, "/api/projects", """{"name":"테스트 팝업","stage":"Report, Done"}""", "알 수 없는 단계입니다."),
+            (HttpMethod.Post, "/api/projects", """{"name":""", shape),
+            (HttpMethod.Post, stage, """{"stage":-1}""", shape),
+            (HttpMethod.Post, stage, """{"stage":"Nope"}""", shape),
+            (HttpMethod.Post, stage, """{"stage":"Report, Done"}""", "옮길 단계를 선택해 주세요."),
+            (HttpMethod.Get, "/api/projects?stage=Foo", null, shape),
+        };
+
+        foreach (var (method, path, json, error) in bad)
+        {
+            var res = await host.Authed().SendAsync(
+                new HttpRequestMessage(method, path) { Content = json is null ? null : new StringContent(json, Encoding.UTF8, "application/json") }, Ct);
+            var text = await res.Content.ReadAsStringAsync(Ct);
+            Assert.True(res.StatusCode == HttpStatusCode.BadRequest, $"{method} {path} {json}: {(int)res.StatusCode} {text}");
+            Assert.Equal(error, JsonDocument.Parse(text).RootElement.GetProperty("error").GetString());
+        }
+        Assert.Equal("Inquiry", (await Send(HttpMethod.Get, $"/api/projects/{p.GetProperty("id")}")).GetProperty("project").GetProperty("stage").GetString());
+    }
+
+    [Fact]
+    public async Task Bad_request_in_production_also_returns_korean_error()
+    {
+        // Production does not throw on binding failures by default; Development (the other tests) does.
+        await using var prod = host.WithWebHostBuilder(b => b.UseEnvironment("Production"));
+        var client = prod.CreateClient(new() { BaseAddress = new Uri("http://127.0.0.1:47821") });
+        client.DefaultRequestHeaders.Add("X-Ofnr-Token", LocalAccess.Token);
+
+        var res = await client.GetAsync("/api/projects?stage=Foo", Ct);
+
+        Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
+        Assert.Equal("요청 형식이 올바르지 않습니다.", (await res.Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("error").GetString());
     }
 
     [Fact]
@@ -137,6 +197,13 @@ public sealed class ProjectApiTests(TestHost host) : IClassFixture<TestHost>
         await AddArtifact(quoted, "01_PLAN/x_QUOTE_v01.xlsx", "QUOTE");
         var gated = await Send(HttpMethod.Post, $"/api/projects/{quoted.GetProperty("id")}/stage", new { stage = "Design" });
         Assert.Empty(gated.GetProperty("warnings").EnumerateArray());
+
+        // Dragging a card past design still crosses the contract gate.
+        var jumped = await CreateProject(new { name = "건너뛰기 팝업" });
+        var skip = await Send(HttpMethod.Post, $"/api/projects/{jumped.GetProperty("id")}/stage", new { stage = "Production" });
+        Assert.Equal(["견적서나 제안서 없이 디자인 단계로 넘어갑니다."], skip.GetProperty("warnings").EnumerateArray().Select(w => w.GetString()));
+        var past = await Send(HttpMethod.Post, $"/api/projects/{jumped.GetProperty("id")}/stage", new { stage = "Operation" });
+        Assert.Empty(past.GetProperty("warnings").EnumerateArray());
     }
 
     [Fact]

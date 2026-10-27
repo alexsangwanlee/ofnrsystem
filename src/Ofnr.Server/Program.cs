@@ -18,8 +18,11 @@ builder.Services.AddSingleton<SettingsStore>();
 builder.Services.AddOptions<KestrelServerOptions>()
     .Configure<SettingsStore>((kestrel, settings) => kestrel.Listen(IPAddress.Loopback, settings.Current.Port));
 builder.Services.AddLocalAccess();
-builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
-builder.Services.AddSignalR().AddJsonProtocol(o => o.PayloadSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
+// Integers would bind to undefined enum values such as stage 99.
+builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.Converters.Add(new JsonStringEnumConverter(allowIntegerValues: false)));
+builder.Services.AddSignalR().AddJsonProtocol(o => o.PayloadSerializerOptions.Converters.Add(new JsonStringEnumConverter(allowIntegerValues: false)));
+// Binding failures throw in every environment so the handler below can answer them in the { error } shape.
+builder.Services.Configure<RouteHandlerOptions>(o => o.ThrowOnBadRequest = true);
 builder.Services.AddSingleton<IOpsNotifier, OpsNotifier>();
 builder.Services.AddDbContext<OfnrDb>((sp, o) => o.UseNpgsql(sp.GetRequiredService<SettingsStore>().Current.ConnectionString));
 
@@ -50,6 +53,15 @@ catch (NpgsqlException e)
 }
 
 app.UseLocalAccess();
+app.Use(async (ctx, next) =>
+{
+    try { await next(ctx); }
+    catch (Microsoft.AspNetCore.Http.BadHttpRequestException e) when (e.StatusCode == StatusCodes.Status400BadRequest && !ctx.Response.HasStarted)
+    {
+        ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
+        await ctx.Response.WriteAsJsonAsync(new { error = "요청 형식이 올바르지 않습니다." });
+    }
+});
 
 app.MapGet("/api/health", () => Health.Build(settings.Current, dbError));
 app.MapProjectEndpoints();

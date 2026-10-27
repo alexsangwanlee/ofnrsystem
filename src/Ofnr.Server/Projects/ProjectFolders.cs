@@ -10,7 +10,8 @@ public static partial class ProjectFolders
     [GeneratedRegex("[^A-Za-z0-9]+")]
     private static partial Regex NonSlug();
 
-    [GeneratedRegex(@"^(OFNR-\d{5})_([A-Za-z0-9]+)_v(\d{2,})(?:_FINAL)?\.[^.]+$")]
+    // Windows file names are case-insensitive, so quote_V02 is the same document as QUOTE_v02.
+    [GeneratedRegex(@"^(OFNR-\d{5})_([A-Za-z0-9]+)_v(\d{2,})(?:_FINAL)?\.[^.]+$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex Versioned();
 
     /// <summary>ASCII folder short name: Claude Code breaks on Korean paths, and Excel on paths over 218 chars.</summary>
@@ -33,7 +34,7 @@ public static partial class ProjectFolders
     {
         var max = Directory.Exists(dir)
             ? Directory.EnumerateFiles(dir).Select(f => ParseVersioned(Path.GetFileName(f)))
-                .Where(v => v is { } x && x.jobNo == jobNo && x.docCode == docCode)
+                .Where(v => v is { } x && x.jobNo.Equals(jobNo, StringComparison.OrdinalIgnoreCase) && x.docCode.Equals(docCode, StringComparison.OrdinalIgnoreCase))
                 .Select(v => v!.Value.version).DefaultIfEmpty().Max()
             : 0;
         return $"{jobNo}_{docCode}_v{max + 1:D2}.{ext.TrimStart('.')}";
@@ -41,7 +42,7 @@ public static partial class ProjectFolders
 
     public static (string jobNo, string docCode, int version)? ParseVersioned(string fileName) =>
         Versioned().Match(fileName) is { Success: true } m && int.TryParse(m.Groups[3].ValueSpan, out var v)
-            ? (m.Groups[1].Value, m.Groups[2].Value, v)
+            ? (m.Groups[1].Value.ToUpperInvariant(), m.Groups[2].Value.ToUpperInvariant(), v)
             : null;
 
     /// <summary>Size and mtime of every file, keyed by '/'-separated relative path. Never opens a file, so OneDrive placeholders stay online-only.</summary>

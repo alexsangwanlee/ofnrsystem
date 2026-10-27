@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
@@ -10,6 +11,9 @@ namespace Ofnr.Server.Projects;
 public static class ProjectEndpoints
 {
     static readonly string[] StageLabels = ["문의", "기획", "디자인", "제작", "운영", "리포트", "완료"];
+
+    // Serializes number allocation in this process; the unique index and one retry cover a second server process.
+    static readonly SemaphoreSlim CreateLock = new(1, 1);
 
     static readonly JobStatus[] AttentionStatuses = [JobStatus.NeedsAttention, JobStatus.Review, JobStatus.Failed];
 
@@ -32,12 +36,14 @@ public static class ProjectEndpoints
         p.Id, p.JobNo, p.Name, p.Slug, p.ClientId, p.Client != null ? p.Client.Name : null, p.Stage, p.Status, p.Venue,
         p.InstallDate, p.OpenDate, p.EndDate, p.TeardownDate, p.QuoteAmount, p.ContractAmount, p.CostAmount, p.FolderPath,
         db.Jobs.Count(j => j.ProjectId == p.Id && AttentionStatuses.Contains(j.Status)),
-        db.Jobs.Count(j => j.ProjectId == p.Id && j.Status == JobStatus.Running)));
+        db.Jobs.Count(j => j.ProjectId == p.Id && j.Status == JobStatus.Running), p.Instructions));
 
     public static Task<ProjectDto> DtoAsync(OfnrDb db, Guid id) => db.Projects.Where(p => p.Id == id).ToDtos(db).SingleAsync();
 
     public static async Task<string?> ValidateAsync(OfnrDb db, ProjectInput i) =>
         string.IsNullOrWhiteSpace(i.Name) ? "프로젝트 이름을 입력해 주세요."
+        // The enum converter still reads comma lists such as "Report, Done" into undefined values.
+        : i.Stage is { } s && !Enum.IsDefined(s) ? "알 수 없는 단계입니다."
         : i.ClientId is { } c && !await db.Clients.AnyAsync(x => x.Id == c) ? "거래처를 찾을 수 없습니다."
         : null;
 
@@ -55,21 +61,26 @@ public static class ProjectEndpoints
         Apply(p, input);
         db.Projects.Add(p);
         db.Activities.Add(new Activity { ProjectId = p.Id, Kind = "project", Text = $"프로젝트를 만들었습니다: {p.Name}" });
-        for (var retry = true; ; retry = false)
+        await CreateLock.WaitAsync();
+        try
         {
-            p.JobNo = await JobNumbers.NextAsync(db, now);
-            // shortcut: a lost race below leaves this empty folder behind; acceptable for one user creating projects.
-            p.FolderPath = ProjectFolders.Create(o, p.JobNo, p.Slug, now);
-            try
+            for (var retry = true; ; retry = false)
             {
-                await db.SaveChangesAsync();
-                return p;
-            }
-            catch (DbUpdateException e) when (retry && e.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
-            {
-                // Another create took the number between NextAsync and the insert.
+                p.JobNo = await JobNumbers.NextAsync(db, now);
+                // shortcut: a race lost to another server process leaves this empty folder behind; fine while one server runs.
+                p.FolderPath = ProjectFolders.Create(o, p.JobNo, p.Slug, now);
+                try
+                {
+                    await db.SaveChangesAsync();
+                    return p;
+                }
+                catch (DbUpdateException e) when (retry && e.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
+                {
+                    // Another process took the number between NextAsync and the insert.
+                }
             }
         }
+        finally { CreateLock.Release(); }
     }
 
     public static void MapProjectEndpoints(this WebApplication app)
@@ -135,10 +146,10 @@ public static class ProjectEndpoints
 
         app.MapPost("/api/projects/{id:guid}/stage", async (OfnrDb db, IOpsNotifier ops, Guid id, StageInput input) =>
         {
-            if (input.Stage is not { } stage) return Error(400, "옮길 단계를 선택해 주세요.");
+            if (input.Stage is not { } stage || !Enum.IsDefined(stage)) return Error(400, "옮길 단계를 선택해 주세요.");
             if (await db.Projects.FindAsync(id) is not { } p) return ProjectNotFound();
-            // The contract gate between planning and design only warns; it never blocks.
-            string[] warnings = stage == ProjectStage.Design && p.Stage < stage
+            // The contract gate between planning and design only warns; it never blocks. A drag from 문의 straight to 제작 crosses it too.
+            string[] warnings = p.Stage < ProjectStage.Design && stage >= ProjectStage.Design
                 && !await db.Artifacts.AnyAsync(a => a.ProjectId == id && (a.DocCode == "QUOTE" || a.DocCode == "PROP"))
                 ? ["견적서나 제안서 없이 디자인 단계로 넘어갑니다."]
                 : [];
@@ -212,7 +223,10 @@ public static class ProjectEndpoints
             log.LogInformation("Open skipped on this OS: {Path}", full);
             return Results.NoContent();
         }
-        Process.Start(isDir ? new ProcessStartInfo("explorer.exe") { ArgumentList = { full } } : new ProcessStartInfo(full) { UseShellExecute = true })?.Dispose();
+        // Full path: a bare explorer.exe is searched in the app and current directories first.
+        var explorer = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe");
+        try { Process.Start(isDir ? new ProcessStartInfo(explorer) { ArgumentList = { full } } : new ProcessStartInfo(full) { UseShellExecute = true })?.Dispose(); }
+        catch (Win32Exception) { return Error(400, "이 파일을 열 프로그램이 없습니다. 프로그램을 설치한 뒤 다시 열어 주세요."); }
         return Results.NoContent();
     }
 
