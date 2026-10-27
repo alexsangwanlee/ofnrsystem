@@ -17,22 +17,24 @@ public static class LocalAccess
 
     public static IServiceCollection AddLocalAccess(this IServiceCollection services) =>
         services.AddCors(o => o.AddPolicy(CorsPolicy, p => p
-            .WithOrigins("http://tauri.localhost", "tauri://localhost", "http://localhost:5173")
+            .WithOrigins("http://tauri.localhost", "https://tauri.localhost", "tauri://localhost", "http://localhost:5173")
             .AllowAnyHeader()
             .AllowAnyMethod()
             .AllowCredentials()));
 
     public static WebApplication UseLocalAccess(this WebApplication app)
     {
-        var port = app.Services.GetRequiredService<SettingsStore>().Current.Port;
-        string[] hosts = [$"127.0.0.1:{port}", $"localhost:{port}"];
+        var settings = app.Services.GetRequiredService<SettingsStore>();
 
         app.UseCors(CorsPolicy);
         app.Use(async (ctx, next) =>
         {
-            if (!hosts.Contains(ctx.Request.Host.Value, StringComparer.OrdinalIgnoreCase))
+            // Read per request: the desktop sidecar learns its port only once Kestrel has bound it.
+            var port = settings.Current.Port;
+            if (!new[] { $"127.0.0.1:{port}", $"localhost:{port}" }.Contains(ctx.Request.Host.Value, StringComparer.OrdinalIgnoreCase))
             {
                 ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
+                await ctx.Response.WriteAsJsonAsync(new { error = "허용되지 않은 접근입니다." });
                 return;
             }
 
@@ -45,6 +47,7 @@ public static class LocalAccess
                 if (token is null || !CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(token), TokenBytes))
                 {
                     ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                    await ctx.Response.WriteAsJsonAsync(new { error = "인증 토큰이 없거나 맞지 않습니다." });
                     return;
                 }
             }

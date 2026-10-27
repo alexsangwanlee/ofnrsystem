@@ -81,6 +81,7 @@ function SettingsForm({ saved, onSaved }: { saved: SettingsDto; onSaved: (d: Set
     jobsRoot: ascii(v.jobsRoot),
     templatesDir: required(v.templatesDir),
     backupsDir: required(v.backupsDir),
+    pgDumpPath: required(v.pgDumpPath),
     imapPort: port(v.mail.imapPort),
     smtpPort: port(v.mail.smtpPort),
     maxConcurrentJobs: v.maxConcurrentJobs >= 1 && v.maxConcurrentJobs <= 8 ? undefined : "1에서 8 사이로 입력해 주세요.",
@@ -151,6 +152,13 @@ function SettingsForm({ saved, onSaved }: { saved: SettingsDto; onSaved: (d: Set
             </Field>
             <Field label="백업 폴더" hint="데이터베이스를 하루 한 번 백업하고 최근 14개를 남깁니다." validationMessage={val.message("backupsDir")}>
               <Input {...text("backupsDir")} />
+            </Field>
+            <Field
+              label="pg_dump 실행 파일"
+              hint="백업에 쓰는 PostgreSQL 프로그램입니다. 백업이 실패하면 PostgreSQL 설치 폴더의 bin\pg_dump.exe 경로를 넣어 주세요."
+              validationMessage={val.message("pgDumpPath")}
+            >
+              <Input {...text("pgDumpPath")} />
             </Field>
             {footer}
           </div>

@@ -56,20 +56,43 @@ public sealed partial class Health(SettingsStore settings, IMailSync mail, Backu
         var (_, pinned, login) = Engines.Single(e => e.Name == engine);
         var exe = engine == "claude" ? o.ClaudeExe : o.CodexExe;
         EngineDto dto;
-        try
+        if (Script(exe) is { } script)
         {
-            var (exit, output) = await RunAsync(exe, "--version");
-            var version = exit == 0 ? VersionNumber().Match(output) is { Success: true } m ? m.Value : null : null;
-            dto = new(engine, exe, version, pinned, version is not null, (await RunAsync(exe, login)).Exit == 0,
-                version is null ? $"실행 파일이 버전을 알려 주지 않았습니다: {exe}"
-                : version != pinned ? $"고정 버전 {pinned}과 다릅니다. 엔진 점검으로 동작을 확인해 주세요." : null);
+            dto = new(engine, script, null, pinned, false, false, $"스크립트(.cmd, .ps1)는 서버가 안전하게 실행할 수 없습니다. 설정에서 .exe 파일 경로를 지정해 주세요: {script}");
         }
-        catch (Exception e) when (e is Win32Exception or TimeoutException)
+        else
         {
-            dto = new(engine, exe, null, pinned, false, false, $"실행 파일을 실행하지 못했습니다. 설치와 설정의 실행 파일 경로를 확인해 주세요: {exe}");
+            try
+            {
+                var (exit, output) = await RunAsync(exe, "--version");
+                var version = exit == 0 ? VersionNumber().Match(output) is { Success: true } m ? m.Value : null : null;
+                dto = new(engine, exe, version, pinned, version is not null, (await RunAsync(exe, login)).Exit == 0,
+                    version is null ? $"실행 파일이 버전을 알려 주지 않았습니다: {exe}"
+                    : version != pinned ? $"고정 버전 {pinned}과 다릅니다. 엔진 점검으로 동작을 확인해 주세요." : null);
+            }
+            catch (Exception e) when (e is Win32Exception or TimeoutException)
+            {
+                dto = new(engine, exe, null, pinned, false, false, $"실행 파일을 실행하지 못했습니다. 설치와 설정의 실행 파일 경로를 확인해 주세요: {exe}");
+            }
         }
         if (checks.TryGetValue(engine, out var c)) dto = dto with { Ok = dto.Ok && c.Ok, Detail = c.Ok ? dto.Detail ?? c.Detail : c.Detail };
         return engines[engine] = dto;
+    }
+
+    static readonly string[] Scripts = [".cmd", ".bat", ".ps1"];
+
+    /// <summary>
+    /// The script <paramref name="exe"/> runs, or null for a program. Process.Start hands a .cmd to cmd.exe, which re-parses
+    /// the arguments (prompt, paths), and cannot start a .ps1. A bare name runs name.exe from PATH, as Windows does, and only
+    /// an npm shim (name.cmd, name.ps1) without one is a script.
+    /// </summary>
+    static string? Script(string exe)
+    {
+        if (Scripts.Contains(Path.GetExtension(exe), StringComparer.OrdinalIgnoreCase)) return exe;
+        if (!OperatingSystem.IsWindows() || Path.HasExtension(exe) || Path.GetDirectoryName(exe) is { Length: > 0 }) return null;
+        var path = (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries);
+        return path.Any(d => File.Exists(Path.Combine(d, exe + ".exe"))) ? null
+            : path.SelectMany(d => Scripts.Select(x => Path.Combine(d, exe + x))).FirstOrDefault(File.Exists);
     }
 
     /// <exception cref="TimeoutException">No exit within 10 seconds.</exception>
@@ -102,7 +125,7 @@ public sealed partial class Health(SettingsStore settings, IMailSync mail, Backu
         {
             var pending = await scope.ServiceProvider.GetRequiredService<OfnrDb>().Database.GetPendingMigrationsAsync(ct);
             return pending.Any()
-                ? new("데이터베이스", false, MigrateError ?? "데이터베이스 구조를 갱신하지 못했습니다. 앱을 다시 시작해 주세요.")
+                ? new("데이터베이스", false, MigrateError ?? "데이터베이스 업데이트가 남아 있습니다. 앱을 다시 시작하면 적용됩니다.")
                 : new("데이터베이스", true, "연결됨");
         }
         catch (Exception e) when (e is DbException or InvalidOperationException)
@@ -111,17 +134,19 @@ public sealed partial class Health(SettingsStore settings, IMailSync mail, Backu
         }
     }
 
-    /// <summary>One check per server in <c>&lt;data&gt;/mcp.json</c>: an absolute command must exist.</summary>
+    /// <summary>One check per server in <c>&lt;data&gt;/mcp.json</c>: an absolute command must exist. A hand-edited file of another shape is a failing check, never an error.</summary>
     static CheckDto[] Mcp(string dataRoot)
     {
         var path = Path.Combine(dataRoot, "mcp.json");
         if (!File.Exists(path)) return [new("mcp.json", false, $"외부 MCP 설정 파일이 없습니다. 설치 스크립트(setup.ps1)를 다시 실행해 주세요: {path}")];
-        JsonObject? servers;
-        try { servers = JsonNode.Parse(File.ReadAllText(path))?["mcpServers"] as JsonObject; }
+        JsonNode? root;
+        try { root = JsonNode.Parse(File.ReadAllText(path)); }
         catch (JsonException e) { return [new("mcp.json", false, $"mcp.json 형식이 잘못되었습니다: {e.Message}")]; }
-        return [.. (servers ?? []).Select(s => s.Value?["command"]?.ToString() is { } command
+        if ((root as JsonObject)?["mcpServers"] is not JsonObject servers) return [new("mcp.json", false, "mcp.json에 mcpServers 항목이 없습니다.")];
+        return [.. servers.Select(s => (s.Value as JsonObject)?["command"] is JsonValue c && c.TryGetValue(out string? command)
             ? Path.IsPathRooted(command) && !File.Exists(command) ? new CheckDto(s.Key, false, $"실행 파일이 없습니다: {command}") : new CheckDto(s.Key, true, command)
-            : new CheckDto(s.Key, true, s.Value?["url"]?.ToString() ?? ""))];
+            : (s.Value as JsonObject)?["url"] is JsonValue u && u.TryGetValue(out string? url) ? new CheckDto(s.Key, true, url)
+            : new CheckDto(s.Key, false, "설정 형식이 잘못되었습니다. command 또는 url이 있어야 합니다."))];
     }
 
     // Skill history needs git; without it skills still work.

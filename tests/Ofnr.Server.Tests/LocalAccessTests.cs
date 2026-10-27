@@ -1,4 +1,6 @@
 using System.Net;
+using System.Net.Http.Json;
+using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Ofnr.Server.Security;
@@ -14,6 +16,7 @@ public sealed class LocalAccessTests(TestHost host) : IClassFixture<TestHost>
     {
         var res = await host.CreateClient().GetAsync("/api/health", Ct);
         Assert.Equal(HttpStatusCode.Unauthorized, res.StatusCode);
+        Assert.Equal("인증 토큰이 없거나 맞지 않습니다.", await Error(res));
     }
 
     [Fact]
@@ -31,7 +34,10 @@ public sealed class LocalAccessTests(TestHost host) : IClassFixture<TestHost>
         client.DefaultRequestHeaders.Host = "evil.example:47821";
         var res = await client.GetAsync("/api/health", Ct);
         Assert.Equal(HttpStatusCode.Forbidden, res.StatusCode);
+        Assert.Equal("허용되지 않은 접근입니다.", await Error(res));
     }
+
+    static async Task<string?> Error(HttpResponseMessage res) => (await res.Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("error").GetString();
 
     [Fact]
     public async Task Token_in_query_is_accepted_only_for_hubs()
@@ -60,11 +66,13 @@ public sealed class LocalAccessTests(TestHost host) : IClassFixture<TestHost>
         Assert.False(res.Headers.Contains("Access-Control-Allow-Origin"));
     }
 
-    [Fact]
-    public async Task Cors_allows_tauri_localhost()
+    [Theory]
+    [InlineData("http://tauri.localhost")]
+    [InlineData("https://tauri.localhost")]
+    public async Task Cors_allows_tauri_localhost(string origin)
     {
-        var res = await host.CreateClient().SendAsync(Preflight("http://tauri.localhost"), Ct);
-        Assert.Equal("http://tauri.localhost", Assert.Single(res.Headers.GetValues("Access-Control-Allow-Origin")));
+        var res = await host.CreateClient().SendAsync(Preflight(origin), Ct);
+        Assert.Equal(origin, Assert.Single(res.Headers.GetValues("Access-Control-Allow-Origin")));
     }
 
     static HttpRequestMessage Preflight(string origin) => new(HttpMethod.Options, "/api/health")

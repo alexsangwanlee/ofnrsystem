@@ -11,7 +11,7 @@ public sealed class MailException(string message, Exception? inner = null) : Exc
 /// Passwords in <c>&lt;data&gt;/secrets/&lt;name&gt;.bin</c>: DPAPI (current user, no entropy) over UTF-8, the format scripts/setup.ps1 writes.
 /// Other OS, for development only: <c>mail</c> comes from the OFNR_MAIL_PASSWORD environment variable and nothing is stored.
 /// </summary>
-public sealed class SecretStore(SettingsStore settings, IConfiguration config)
+public class SecretStore(SettingsStore settings, IConfiguration config)
 {
     string PathOf(string name) => Path.Combine(settings.Current.DataRoot, "secrets", name + ".bin");
 
@@ -24,7 +24,7 @@ public sealed class SecretStore(SettingsStore settings, IConfiguration config)
         File.WriteAllBytes(path, ProtectedData.Protect(Encoding.UTF8.GetBytes(value), null, DataProtectionScope.CurrentUser));
     }
 
-    public string? Load(string name)
+    public virtual string? Load(string name)
     {
         if (!OperatingSystem.IsWindows()) return name == "mail" ? config["OFNR_MAIL_PASSWORD"] : null;
         var path = PathOf(name);

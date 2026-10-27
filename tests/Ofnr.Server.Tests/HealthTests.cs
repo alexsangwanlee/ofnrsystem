@@ -9,6 +9,7 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Client;
 using Ofnr.Server.Data;
+using Ofnr.Server.Ops;
 using Ofnr.Server.Security;
 
 namespace Ofnr.Server.Tests;
@@ -38,6 +39,11 @@ public sealed class HealthTests
 
         Assert.False(h.GetProperty("db").GetProperty("ok").GetBoolean());
         Assert.StartsWith("데이터베이스에 연결하지 못했습니다: ", h.GetProperty("db").GetProperty("detail").GetString());
+
+        // PostgreSQL comes up after the server did: the startup connection error is stale, and a restart applies the update.
+        app.Services.GetRequiredService<SettingsStore>().Current.ConnectionString = host.ConnectionString;
+        var db = (await client.GetFromJsonAsync<JsonElement>("/api/health", Ct)).GetProperty("db");
+        Assert.Equal((false, "데이터베이스 업데이트가 남아 있습니다. 앱을 다시 시작하면 적용됩니다."), (db.GetProperty("ok").GetBoolean(), db.GetProperty("detail").GetString()));
     }
 
     [Fact]
@@ -65,6 +71,38 @@ public sealed class HealthTests
     }
 
     [Fact]
+    public async Task Mcp_json_of_an_unexpected_shape_is_a_failing_check()
+    {
+        await using var host = new TestHost();
+        var path = Path.Combine(host.DataRoot, "mcp.json");
+        CheckDto[] Mcp(JsonElement h) => [.. h.GetProperty("mcp").EnumerateArray().Select(c => new CheckDto(c.GetProperty("name").GetString()!, c.GetProperty("ok").GetBoolean(), c.GetProperty("detail").GetString()!))];
+
+        File.WriteAllText(path, """{ "mcpServers": { "excel": "mcp-excel.exe", "remote": { "url": "http://127.0.0.1:9/mcp" }, "empty": {} } }""");
+        Assert.Equal([new("excel", false, "설정 형식이 잘못되었습니다. command 또는 url이 있어야 합니다."), new("remote", true, "http://127.0.0.1:9/mcp"),
+            new("empty", false, "설정 형식이 잘못되었습니다. command 또는 url이 있어야 합니다.")], Mcp(await host.Authed().GetFromJsonAsync<JsonElement>("/api/health", Ct)));
+
+        File.WriteAllText(path, "[1, 2]");
+        Assert.Equal([new("mcp.json", false, "mcp.json에 mcpServers 항목이 없습니다.")], Mcp(await host.Authed().GetFromJsonAsync<JsonElement>("/api/health", Ct)));
+    }
+
+    [Fact]
+    public async Task Engine_set_to_a_cmd_or_ps1_shim_is_an_error()
+    {
+        await using var host = new TestHost();
+        var settings = host.Services.GetRequiredService<SettingsStore>().Current;
+        (settings.ClaudeExe, settings.CodexExe) = (Path.Combine(host.DataRoot, "claude.cmd"), Path.Combine(host.DataRoot, "codex.ps1"));
+
+        var h = await host.Authed().GetFromJsonAsync<JsonElement>("/api/health", Ct);
+
+        foreach (var (name, exe) in new[] { ("claude", settings.ClaudeExe), ("codex", settings.CodexExe) })
+        {
+            var engine = Engine(h, name);
+            Assert.False(engine.GetProperty("ok").GetBoolean());
+            Assert.Equal($"스크립트(.cmd, .ps1)는 서버가 안전하게 실행할 수 없습니다. 설정에서 .exe 파일 경로를 지정해 주세요: {exe}", engine.GetProperty("detail").GetString());
+        }
+    }
+
+    [Fact]
     public async Task Engine_check_passes_only_when_the_engine_reports_through_mcp()
     {
         await using var h = new JobHost();
@@ -73,6 +111,12 @@ public sealed class HealthTests
         var silent = await h.Send(HttpMethod.Post, "/api/health/engine-check/claude");
         Assert.Equal(("claude", false), (silent.GetProperty("name").GetString(), silent.GetProperty("ok").GetBoolean()));
         Assert.Equal("엔진이 대시보드 MCP 도구를 쓰지 못했습니다. 엔진의 MCP 설정과 승인 설정을 확인해 주세요.", silent.GetProperty("detail").GetString());
+
+        // The engine only writes the line the check asks the tool to report.
+        h.Agents.Script = (_, ct) => Echo(ct);
+        var echoed = await h.Send(HttpMethod.Post, "/api/health/engine-check/claude");
+        Assert.Equal((false, "엔진이 대시보드 MCP 도구를 쓰지 못했습니다. 엔진의 MCP 설정과 승인 설정을 확인해 주세요."),
+            (echoed.GetProperty("ok").GetBoolean(), echoed.GetProperty("detail").GetString()));
 
         h.Agents.Script = (call, ct) => ReportThroughMcp(h, call, ct);
         var passed = await h.Send(HttpMethod.Post, "/api/health/engine-check/claude");
@@ -85,8 +129,33 @@ public sealed class HealthTests
         await h.Send(HttpMethod.Post, "/api/health/engine-check/gemini", expected: HttpStatusCode.NotFound);
     }
 
+    [Fact]
+    public async Task Engine_check_that_does_not_end_in_time_fails_and_cancels_its_job()
+    {
+        await using var h = new JobHost();
+        h.Agents.Hold = true;
+        var timeout = OpsEndpoints.CheckTimeout;
+        OpsEndpoints.CheckTimeout = TimeSpan.FromSeconds(1);
+        JsonElement late;
+        try { late = await h.Send(HttpMethod.Post, "/api/health/engine-check/claude"); }
+        finally { OpsEndpoints.CheckTimeout = timeout; }
+
+        Assert.False(late.GetProperty("ok").GetBoolean());
+        Assert.EndsWith("안에 끝나지 않았습니다.", late.GetProperty("detail").GetString());
+        await using var db = h.Db();
+        await h.WaitForStatus((await db.Jobs.SingleAsync(Ct)).Id, JobStatus.Canceled);
+    }
+
+    static async IAsyncEnumerable<AgentResponseUpdate> Echo([EnumeratorCancellation] CancellationToken ct)
+    {
+        await Task.Delay(1, ct);
+        yield return new(ChatRole.Assistant, [new TextReasoningContent("엔진 점검 완료")]);
+        yield return new(ChatRole.Assistant, FakeAgents.Result);
+    }
+
     static async IAsyncEnumerable<AgentResponseUpdate> ReportThroughMcp(JobHost h, FakeCall call, [EnumeratorCancellation] CancellationToken ct)
     {
+        yield return new(ChatRole.Assistant, [new AIContent { AdditionalProperties = new() { ["cli.tool"] = "mcp__ofnr__report_progress", ["cli.args"] = """{"message":"엔진 점검 완료"}""" } }]);
         var transport = new HttpClientTransport(new HttpClientTransportOptions
         {
             Endpoint = new Uri("http://127.0.0.1:47821/mcp"),

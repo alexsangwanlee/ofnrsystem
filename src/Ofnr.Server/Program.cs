@@ -1,5 +1,6 @@
-using System.Data.Common;
+using System.Globalization;
 using System.Net;
+using System.Text;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.EntityFrameworkCore;
@@ -18,6 +19,15 @@ using Ofnr.Server.Security;
 using Ofnr.Server.Skills;
 
 var builder = WebApplication.CreateBuilder(args);
+// The desktop app (desktop/src-tauri/src/lib.rs) starts the server with --sidecar: any free port, announced on stdout.
+var sidecar = args.Contains("--sidecar");
+if (sidecar)
+{
+    builder.Configuration["OFNR_PORT"] = "0"; // like an env override, so settings.json keeps its own port
+    // Tauri reads the pipes as UTF-8; the Korean console code page 949 would garble Korean errors.
+    try { Console.OutputEncoding = Encoding.UTF8; }
+    catch (IOException) { } // no console at all, and then .NET writes UTF-8 anyway
+}
 // Request logs would print the SignalR ?access_token= query.
 builder.Logging.AddFilter("Microsoft.AspNetCore", LogLevel.Warning);
 builder.Services.AddSingleton<SettingsStore>();
@@ -72,7 +82,8 @@ catch (InvalidDataException e)
     Console.Error.WriteLine(e.Message);
     return 1;
 }
-Bootstrap.EnsureDataRoot(settings.Current, AppContext.BaseDirectory);
+// The installed app's resources folder; a plain build carries config/ and claude-plugin/ next to the server.
+Bootstrap.EnsureDataRoot(settings.Current, app.Configuration["OFNR_CONTENT"] is { Length: > 0 } content ? content : AppContext.BaseDirectory);
 try { app.Services.GetRequiredService<RecipeCatalog>(); }
 catch (Exception e) when (e is InvalidDataException or IOException)
 {
@@ -80,7 +91,7 @@ catch (Exception e) when (e is InvalidDataException or IOException)
     return 1;
 }
 var health = app.Services.GetRequiredService<Health>();
-var backingUp = false;
+var step = "connect";
 try
 {
     using var scope = app.Services.CreateScope();
@@ -88,19 +99,23 @@ try
     // A rollback point before an update changes the structure of a database in use; a new database has nothing to lose.
     if ((await database.GetPendingMigrationsAsync()).Any() && (await database.GetAppliedMigrationsAsync()).Any())
     {
-        backingUp = true;
+        step = "backup";
         await app.Services.GetRequiredService<Backup>().RunOnceAsync("pre-migrate");
-        backingUp = false;
     }
+    step = "migrate";
     await database.MigrateAsync();
 }
 catch (Exception e)
 {
     // Keeps serving so the check screen can say PostgreSQL is missing or stopped, or why the update was not applied.
-    health.MigrateError = backingUp ? $"백업하지 못해 데이터베이스 업데이트를 적용하지 않았습니다. 앱을 다시 시작해 주세요: {e.Message}"
-        : e is DbException ? $"데이터베이스에 연결하지 못했습니다: {e.Message}"
-        : $"데이터베이스 업데이트를 적용하지 못했습니다: {e.Message}";
-    Console.Error.WriteLine(health.MigrateError);
+    // A connection error is not kept: once PostgreSQL runs, the live check says what is left.
+    health.MigrateError = step switch
+    {
+        "backup" => $"업데이트 전에 데이터베이스를 백업하지 못해 업데이트를 적용하지 않았습니다. 설정에서 pg_dump 경로를 확인하고 앱을 다시 시작해 주세요: {e.Message}",
+        "migrate" => $"데이터베이스 업데이트를 적용하지 못했습니다: {e.Message}",
+        _ => null,
+    };
+    Console.Error.WriteLine(health.MigrateError ?? $"데이터베이스에 연결하지 못했습니다: {e.Message}");
 }
 
 app.UseLocalAccess();
@@ -131,6 +146,25 @@ if (app.Configuration["OFNR_WEB_ROOT"] is { Length: > 0 } webRoot)
     app.MapFallbackToFile("index.html", web);
 }
 
-app.Lifetime.ApplicationStarted.Register(() => Console.WriteLine($"OFNR listening http://127.0.0.1:{settings.Current.Port}"));
+app.Lifetime.ApplicationStarted.Register(() =>
+{
+    if (!sidecar)
+    {
+        Console.WriteLine($"OFNR listening http://127.0.0.1:{settings.Current.Port}");
+        return;
+    }
+    // Before the ready line: the Host check and the jobs' MCP address both use this port.
+    var port = new Uri(app.Urls.Single()).Port;
+    app.Configuration["OFNR_PORT"] = port.ToString(CultureInfo.InvariantCulture);
+    settings.Current.Port = port;
+    Console.WriteLine($"OFNR_READY http://127.0.0.1:{port}");
+    // Stdin closes when the app exits or crashes, so the server never outlives it.
+    new Thread(() =>
+    {
+        try { Console.OpenStandardInput().CopyTo(Stream.Null); }
+        catch (IOException) { } // a broken pipe is a closed one
+        app.Lifetime.StopApplication();
+    }) { IsBackground = true }.Start();
+});
 app.Run();
 return 0;

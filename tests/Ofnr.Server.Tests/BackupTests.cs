@@ -1,9 +1,13 @@
+using System.Net.Http.Json;
+using System.Text.Json;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
+using Ofnr.Server.Mail;
 using Ofnr.Server.Ops;
+using Ofnr.Server.Security;
 
 namespace Ofnr.Server.Tests;
 
@@ -81,11 +85,35 @@ public sealed class BackupTests
         Assert.Contains("pg_dump: 연결 실패", backup.Health.Detail);
     }
 
-    [Fact]
-    public async Task Pending_migration_triggers_backup_first()
+    /// <summary>The db password setup.ps1 saved with DPAPI, which this OS does not have.</summary>
+    sealed class FakeSecrets(SettingsStore settings) : SecretStore(settings, new ConfigurationBuilder().Build())
     {
-        await using var host = new TestHost();
-        // A database one release behind: it has an applied migration, and Initial is pending.
+        public override string? Load(string name) => name == "db" ? "s3cret-from-setup" : null;
+    }
+
+    [Fact]
+    public async Task Db_password_comes_from_secret_store_and_reaches_pg_dump_only_through_PGPASSWORD()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "The fake pg_dump is a shell script.");
+        var settings = new SettingsStore(new ConfigurationBuilder().AddInMemoryCollection([new("OFNR_DATA", data)]).Build());
+        var secrets = new FakeSecrets(settings);
+        const string noPassword = "Host=127.0.0.1;Port=5432;Database=ofnr_ops;Username=ofnr"; // what setup.ps1 writes
+        var pgDump = settings.Current.PgDumpPath = Path.Combine(data, "pg_dump");
+        settings.Current.ConnectionString = noPassword;
+        File.WriteAllText(pgDump, "#!/bin/sh\nprintf '%s\\n' \"$PGPASSWORD\" \"$@\" > \"$0.log\"\n");
+        if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(pgDump, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        var file = Path.Combine(data, "out.dump");
+
+        await new PgDumpRunner(settings, secrets).DumpAsync(file, Ct);
+
+        Assert.Equal(["s3cret-from-setup", "-Fc", "-w", "-f", file, "-h", "127.0.0.1", "-p", "5432", "-U", "ofnr", "ofnr_ops"], File.ReadAllLines(pgDump + ".log"));
+        Assert.Equal(noPassword + ";Password=s3cret-from-setup", secrets.WithDbPassword(noPassword));
+        Assert.Equal(noPassword + ";Password=ofnr_dev", secrets.WithDbPassword(noPassword + ";Password=ofnr_dev"));
+    }
+
+    /// <summary>A database one release behind: it has an applied migration, and Initial is pending.</summary>
+    static void OlderDatabase(TestHost host)
+    {
         using (var admin = new NpgsqlConnection(new NpgsqlConnectionStringBuilder(TestHost.ServerConnection) { Database = "postgres" }.ConnectionString))
         {
             admin.Open();
@@ -101,6 +129,13 @@ public sealed class BackupTests
                 """, conn);
             older.ExecuteNonQuery();
         }
+    }
+
+    [Fact]
+    public async Task Pending_migration_triggers_backup_first()
+    {
+        await using var host = new TestHost();
+        OlderDatabase(host);
         var seen = new List<string[]>();
         var dump = new FakeDump(async () => seen.Add(await AppliedAsync(host.ConnectionString)));
 
@@ -110,6 +145,23 @@ public sealed class BackupTests
         Assert.Equal(["20260101000000_Older"], Assert.Single(seen));
         Assert.Contains("20261027154244_Initial", await AppliedAsync(host.ConnectionString));
         Assert.StartsWith(Path.Combine(host.DataRoot, "backups", "ofnr-"), Assert.Single(dump.Files));
+    }
+
+    [Fact]
+    public async Task Failed_backup_before_migration_names_the_pg_dump_error_in_db_health()
+    {
+        await using var host = new TestHost();
+        OlderDatabase(host);
+        var dump = new FakeDump(() => throw new InvalidOperationException("pg_dump: 연결 실패"));
+        var app = host.WithWebHostBuilder(b => b.ConfigureTestServices(s => s.AddSingleton<IDumpRunner>(dump)));
+        var client = app.CreateClient(new() { BaseAddress = new Uri("http://127.0.0.1:47821") });
+        client.DefaultRequestHeaders.Add("X-Ofnr-Token", LocalAccess.Token);
+
+        var db = (await client.GetFromJsonAsync<JsonElement>("/api/health", Ct)).GetProperty("db");
+
+        Assert.Equal((false, "업데이트 전에 데이터베이스를 백업하지 못해 업데이트를 적용하지 않았습니다. 설정에서 pg_dump 경로를 확인하고 앱을 다시 시작해 주세요: pg_dump: 연결 실패"),
+            (db.GetProperty("ok").GetBoolean(), db.GetProperty("detail").GetString()));
+        Assert.Equal(["20260101000000_Older"], await AppliedAsync(host.ConnectionString));
     }
 
     static async Task<string[]> AppliedAsync(string connectionString)

@@ -34,7 +34,7 @@ scripts/                setup.ps1(대표 PC 준비), publish-sidecar.ps1, dev.sh
 ### 앱과 서버 사이 약속 (사이드카)
 
 - Tauri가 `ofnr-server --sidecar`를 띄운다. 환경 변수 `OFNR_TOKEN`(실행마다 새 32바이트 토큰), `OFNR_CONTENT`(설치 폴더의 resources: `config/`, `claude-plugin/`).
-- 서버는 `http://127.0.0.1:0`에 열고, 실제 주소를 `OFNR_READY http://127.0.0.1:<port>` 한 줄로 표준출력에 쓴다. 표준입력이 닫히면(앱이 죽으면) 스스로 끝난다.
+- 서버는 `http://127.0.0.1:0`에 열고(`settings.json`의 포트는 쓰지 않는다), 실제 주소를 `OFNR_READY http://127.0.0.1:<port>` 한 줄로 표준출력에 쓴다. Host 검사와 작업의 MCP 주소도 이 포트를 쓴다. 표준출력과 표준오류는 UTF-8이다. 표준입력이 닫히면(앱이 죽으면) 스스로 끝난다.
 - 화면은 `invoke("server_info")`로 `{ baseUrl, token }`을 받는다. 서버가 준비될 때까지 기다리고, 60초 안에 준비되지 않거나 서버가 먼저 끝나면 "서버를 시작하지 못했습니다" 창을 띄우고 앱을 끝낸다.
 - 업데이트: `check()`, `download()`, `invoke("stop_backend")`, `install()` 순서. 실행 중인 작업이 있으면 설정 화면이 업데이트를 막는다.
 - 창을 닫으면 숨기기만 한다. 트레이의 종료로 끝내면 사이드카도 같이 끝난다(작업 개체라 claude, codex 자식까지).
@@ -61,7 +61,7 @@ Linux 개발 PC에서 .NET은 `export PATH=$HOME/.dotnet:$PATH`가 필요할 수
 - 서버는 `127.0.0.1`에만 연다. `/api/*`, `/hubs/*`는 토큰(`X-Ofnr-Token` 헤더, SignalR 웹소켓만 `access_token` 쿼리)과 Host 검사를 거친다. `/mcp`는 작업별 토큰을 쓰고 화면 토큰은 쓰지 않는다.
 - 메일을 보내는 길은 `POST /api/mail/drafts/{id}/send` 하나뿐이고 사람이 누를 때만 탄다. AI에게 발송 도구를 주지 않는다.
 - `--bare`, `--dangerously-skip-permissions`, `bypassPermissions`, `danger-full-access`, `--dangerously-bypass-approvals-and-sandbox`를 쓰지 않는다.
-- CLI 자식 프로세스 환경에서 `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `CODEX_API_KEY`, `OPENAI_API_KEY`, `CLAUDECODE`, `CLAUDE_CODE_*`(Git Bash 위치를 알려 주는 `CLAUDE_CODE_GIT_BASH_PATH`는 남긴다)를 지우고 `TEMP`, `TMP`를 `<data>\tmp`로 둔다. CLI에 넘기는 경로는 모두 영문(ASCII).
+- CLI 자식 프로세스 환경에서 `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `CODEX_API_KEY`, `OPENAI_API_KEY`, `CLAUDECODE`, `CLAUDE_CODE_*`(Git Bash 위치를 알려 주는 `CLAUDE_CODE_GIT_BASH_PATH`는 남긴다), 화면 토큰 `OFNR_TOKEN`, `OFNR_MAIL_PASSWORD`를 지우고 `TEMP`, `TMP`를 `<data>\tmp`로 둔다. CLI에 넘기는 경로는 모두 영문(ASCII).
 - 프로젝트 폴더: `<ProjectsRoot>/<yyyy>/<JobNo>_<Slug>`, 하위 폴더 `00_IN 01_PLAN 02_DESIGN 03_BUILD 04_OPS 05_REPORT 06_ADMIN`. 작업번호 `OFNR-YYNNN`. 파일 이름 `<JobNo>_<DOCCODE>_v<NN>.<ext>`, 덮어쓰지 않는다.
 - 비밀번호(메일, DB)는 DPAPI로 `<data>\secrets\<name>.bin`에 두고 설정 파일, 로그, 프롬프트에 넣지 않는다. Windows가 아닌 개발 PC에는 DPAPI가 없어 메일 비밀번호를 환경 변수 `OFNR_MAIL_PASSWORD`로만 받고 저장하지 않는다.
 - 메일 본문과 첨부는 신뢰할 수 없는 입력이다. 프롬프트에서 표시하고, 스케치업, 일러스트레이터처럼 스크립트를 돌릴 수 있는 레시피에는 넣지 않는다.

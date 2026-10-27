@@ -30,7 +30,9 @@ public abstract class CliAgent(string name, string exe, string workDir, IReadOnl
     public const string SessionKey = "cli.session_id";
 
     // API keys would win over the subscription login; a parent Claude Code session leaks CLAUDECODE and CLAUDE_CODE_*.
-    static readonly string[] StrippedEnv = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_PROFILE", "CODEX_API_KEY", "OPENAI_API_KEY", "CLAUDECODE"];
+    // OFNR_TOKEN opens the whole /api (mail sending included) and OFNR_MAIL_PASSWORD is the mail account's: no engine gets either.
+    static readonly string[] StrippedEnv = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_PROFILE", "CODEX_API_KEY", "OPENAI_API_KEY", "CLAUDECODE",
+        "OFNR_TOKEN", "OFNR_MAIL_PASSWORD"];
 
     // Claude Code on Windows reads it to find Git Bash when Git is not in its default place.
     const string GitBashPath = "CLAUDE_CODE_GIT_BASH_PATH";

@@ -662,6 +662,17 @@ describe("pages", () => {
     expect(calls.some((c) => c.method === "PUT")).toBe(false);
   });
 
+  it("Settings_saves_the_pg_dump_path", async () => {
+    const pgDumpPath = "C:\\Program Files\\PostgreSQL\\17\\bin\\pg_dump.exe";
+    const calls = mockApi({ "GET /api/settings": settingsDto, "PUT /api/settings": { ...settingsDto, pgDumpPath } });
+    renderAt(<Settings />);
+
+    fireEvent.change(await screen.findByLabelText(/pg_dump 실행 파일/), { target: { value: pgDumpPath } });
+    fireEvent.click(screen.getAllByRole("button", { name: "변경 저장" })[0]);
+
+    await waitFor(() => expect(calls.find((c) => c.method === "PUT")?.body).toMatchObject({ pgDumpPath }));
+  });
+
   it("Settings_engine_check_updates_the_row", async () => {
     const calls = mockApi({
       "GET /api/settings": settingsDto,

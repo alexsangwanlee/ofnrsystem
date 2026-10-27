@@ -11,9 +11,10 @@ namespace Ofnr.Server.Ops;
 public static class OpsEndpoints
 {
     const string CheckMessage = "엔진 점검 완료";
+    const string CheckTool = "mcp__ofnr__report_progress";
 
-    // The check job can wait behind running jobs; past this the CEO gets an answer instead of a button that never returns.
-    static readonly TimeSpan CheckTimeout = TimeSpan.FromMinutes(5);
+    /// <summary>The check job can wait behind running jobs; past this the CEO gets an answer instead of a button that never returns. Settable for tests.</summary>
+    public static TimeSpan CheckTimeout { get; set; } = TimeSpan.FromMinutes(5);
 
     public static void MapOpsEndpoints(this WebApplication app)
     {
@@ -26,7 +27,7 @@ public static class OpsEndpoints
             var job = new Job
             {
                 RecipeId = "free", Engine = engine, Title = $"엔진 점검 · {(engine == "claude" ? "Claude Code" : "Codex")}",
-                Instruction = $"엔진 점검입니다. 파일을 만들지 말고 대시보드 MCP 서버 ofnr의 report_progress 도구(mcp__ofnr__report_progress)를 message 값 \"{CheckMessage}\"로 한 번 호출한 뒤 끝내세요.",
+                Instruction = $"엔진 점검입니다. 파일을 만들지 말고 대시보드 MCP 서버 ofnr의 report_progress 도구({CheckTool})를 message 값 \"{CheckMessage}\"로 한 번 호출한 뒤 끝내세요.",
             };
             db.Jobs.Add(job);
             await db.SaveChangesAsync(ct);
@@ -51,9 +52,9 @@ public static class OpsEndpoints
             // A finished check is no result to review.
             await db.Jobs.Where(j => j.Id == job.Id).ExecuteUpdateAsync(s => s.SetProperty(j => j.Status, JobStatus.Done).SetProperty(j => j.UpdatedAt, DateTimeOffset.UtcNow), ct);
             await ops.JobUpdated(await JobEndpoints.DtoAsync(db, recipes, job.Id));
-            // shortcut: report_progress and the engine's own progress text are both "text" events, so an engine that writes exactly
-            // this line without calling the tool also passes; tag tool-written events if that shows up.
-            var reported = await db.JobEvents.AnyAsync(e => e.JobId == job.Id && e.Kind == "text" && e.Summary == CheckMessage, ct);
+            // The engine called the tool (its own text can echo the line) and the call reached this server (Codex can start a call it then cancels).
+            var reported = await db.JobEvents.AnyAsync(e => e.JobId == job.Id && e.Kind == "tool" && e.Summary.StartsWith(CheckTool), ct)
+                && await db.JobEvents.AnyAsync(e => e.JobId == job.Id && e.Kind == "text" && e.Summary == CheckMessage, ct);
             return Results.Ok(reported
                 ? await health.RecordCheckAsync(engine, true, "엔진 점검을 통과했습니다.")
                 : await health.RecordCheckAsync(engine, false, "엔진이 대시보드 MCP 도구를 쓰지 못했습니다. 엔진의 MCP 설정과 승인 설정을 확인해 주세요."));

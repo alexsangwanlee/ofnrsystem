@@ -130,7 +130,9 @@ public sealed class CliAgentTests : IDisposable
     [Fact]
     public async Task Api_keys_and_claudecode_env_are_stripped()
     {
-        string[] leaked = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_PROFILE", "CODEX_API_KEY", "OPENAI_API_KEY", "CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT"];
+        // OFNR_TOKEN opens the whole /api, mail sending included; OFNR_MAIL_PASSWORD is the mail account's.
+        string[] leaked = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_PROFILE", "CODEX_API_KEY", "OPENAI_API_KEY", "CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT",
+            "OFNR_TOKEN", "OFNR_MAIL_PASSWORD"];
         var saved = leaked.ToDictionary(k => k, Environment.GetEnvironmentVariable);
         var config = new ConfigurationBuilder().AddInMemoryCollection([new("OFNR_DATA", Path.Combine(dir, "data"))]).Build();
         var settings = new SettingsStore(config);
