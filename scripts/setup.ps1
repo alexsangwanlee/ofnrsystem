@@ -183,6 +183,15 @@ if (Has 'dotnet') {
   }
 }
 
+# Anthropic document skills (docx, pdf, pptx, xlsx) for Claude jobs: installed as a user-scope plugin, never copied (their license forbids copies).
+# Both commands are safe to rerun: they report "already" and exit 0.
+if ($claude = Exe 'claude') {
+  & $claude plugin marketplace add anthropics/skills 2>&1 | Out-Host
+  & $claude plugin install document-skills@anthropic-agent-skills 2>&1 | Out-Host
+  if ($LASTEXITCODE -eq 0) { Ok 'Claude 문서 스킬 (docx, pdf, pptx, xlsx)' }
+  else { Warn 'Claude 문서 스킬 설치에 실패했습니다. PowerShell에서 claude plugin install document-skills@anthropic-agent-skills 를 실행해 주세요.' }
+}
+
 $mcpPath = Join-Path $DataRoot 'mcp.json'
 if (Test-Path $mcpPath) {
   Ok "$mcpPath 이(가) 이미 있어 그대로 둡니다."
