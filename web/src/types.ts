@@ -81,6 +81,8 @@ export interface ProjectDto {
   folderPath: string;
   attentionCount: number;
   runningCount: number;
+  /** Not in the plan's ProjectDto; the 지침 tab shows it when the server sends it. */
+  instructions?: string | null;
 }
 export interface ActivityDto {
   id: number;
