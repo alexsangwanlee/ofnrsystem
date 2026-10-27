@@ -213,7 +213,7 @@ public sealed class JobHost : IAsyncDisposable
 
     public static Task WaitFor(Func<bool> done) => WaitFor(() => Task.FromResult(done()), () => "condition");
 
-    static async Task WaitFor(Func<Task<bool>> done, Func<string> what)
+    public static async Task WaitFor(Func<Task<bool>> done, Func<string> what)
     {
         var until = DateTime.UtcNow.AddSeconds(15);
         while (!await done())

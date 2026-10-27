@@ -358,7 +358,9 @@ public sealed class JobQueueTests
         await h.WaitForStatus(id, JobStatus.Failed);
         var run = Assert.Single(await h.Runs(id));
         Assert.Equal((RunStatus.Failed, "연결이 끊겼습니다."), (run.Status, run.Error));
-        Assert.Equal(("error", "작업이 실패했습니다: 연결이 끊겼습니다."), (await h.Events(id))[^1] is var e ? (e.Kind, e.Summary) : default);
+        List<JobEvent> events = [];
+        await JobHost.WaitFor(async () => (events = await h.Events(id)).Any(e => e.Kind == "error"), () => "the error event, written after the status");
+        Assert.Equal(("error", "작업이 실패했습니다: 연결이 끊겼습니다."), (events[^1].Kind, events[^1].Summary));
     }
 
     [Fact]

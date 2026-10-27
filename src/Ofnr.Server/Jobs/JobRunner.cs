@@ -136,16 +136,17 @@ public sealed class JobRunner(IServiceScopeFactory scopes, SettingsStore setting
             // The next run's snapshot would already hold what this run wrote, so its files become drafts now or never.
             if (before is not null) await RegisterArtifactsAsync(db, job, recipe!.DocCode, folder!, before);
             if (lifetime.ApplicationStopping.IsCancellationRequested) return; // the next start marks this run stopped
+            // The log line first, so whoever sees the job end finds why in its log.
             if (ct.IsCancellationRequested)
             {
                 await Approvals.ExpirePendingAsync(db, jobId);
-                await EndAsync(RunStatus.Stopped, JobStatus.Canceled, null);
                 await Log("system", "작업을 중지했습니다.");
+                await EndAsync(RunStatus.Stopped, JobStatus.Canceled, null);
                 return;
             }
             var reason = limit.IsCancellationRequested ? $"제한 시간 {recipe!.TimeoutMinutes}분을 넘겨 중지했습니다." : e.Message;
-            await EndAsync(RunStatus.Failed, JobStatus.Failed, reason);
             await Log("error", $"작업이 실패했습니다: {reason}");
+            await EndAsync(RunStatus.Failed, JobStatus.Failed, reason);
         }
         finally
         {
