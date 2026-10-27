@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Ofnr.Server.Data;
 using Ofnr.Server.Jobs;
@@ -21,7 +22,7 @@ public sealed class ApprovalTests
 
         var q = await approvals.CreateQuestionAsync(job.Id, null, "오픈일을 11월 20일로 볼까요?", null);
 
-        Assert.Equal(("question", ApprovalStatus.Pending, ""), (q.Kind, q.Status, q.Detail));
+        Assert.Equal(("question", ApprovalStatus.Pending), (q.Kind, q.Status));
         Assert.Equal([("requested", q), ("확인이 필요합니다", "오픈일을 11월 20일로 볼까요?", $"/jobs/{job.Id}")], notifier.Calls);
 
         var decided = await approvals.DecideAsync(q.Id, "respond", "네, 11월 20일입니다.");
@@ -37,5 +38,30 @@ public sealed class ApprovalTests
         await Assert.ThrowsAsync<KeyNotFoundException>(() => approvals.DecideAsync(Guid.NewGuid(), "accept", null));
         await Assert.ThrowsAsync<ArgumentException>(() => approvals.DecideAsync(q.Id, "send", null));
         await Assert.ThrowsAsync<ArgumentException>(() => approvals.DecideAsync(q.Id, "respond", " "));
+    }
+
+    [Fact]
+    public async Task Question_detail_is_json_with_question_and_options()
+    {
+        using var t = TestDb.Create();
+        await using var db = t.Context();
+        var job = new Job { RecipeId = "free", Title = "자유 지시" };
+        db.Jobs.Add(job);
+        await db.SaveChangesAsync(Ct);
+        var approvals = new Approvals(db, new RecordingNotifier());
+        var longQuestion = new string('가', 79) + "😀 끝까지 읽어야 하는 질문입니다";
+
+        var withOptions = await approvals.CreateQuestionAsync(job.Id, null, " 부스 크기를 3x3으로 할까요? ", ["3x3", " ", "6x3 "]);
+        var plain = await approvals.CreateQuestionAsync(job.Id, null, longQuestion, null);
+
+        Assert.Equal("부스 크기를 3x3으로 할까요?", withOptions.Title);
+        var detail = JsonDocument.Parse(withOptions.Detail).RootElement;
+        Assert.Equal("부스 크기를 3x3으로 할까요?", detail.GetProperty("question").GetString());
+        Assert.Equal(["3x3", "6x3"], detail.GetProperty("options").EnumerateArray().Select(o => o.GetString()));
+
+        Assert.Equal(new string('가', 79), plain.Title); // cut to 80 chars without splitting the emoji's surrogate pair
+        detail = JsonDocument.Parse(plain.Detail).RootElement;
+        Assert.Equal(longQuestion, detail.GetProperty("question").GetString());
+        Assert.Empty(detail.GetProperty("options").EnumerateArray());
     }
 }

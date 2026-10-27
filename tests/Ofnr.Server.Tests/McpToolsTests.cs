@@ -280,7 +280,7 @@ public sealed class McpToolsTests(TestHost host) : IClassFixture<TestHost>
         var a = await scope.ServiceProvider.GetRequiredService<OfnrDb>().Approvals.SingleAsync(x => x.JobId == s.JobId, Ct);
         Assert.Equal(("question", ApprovalStatus.Pending, s.RunId), (a.Kind, a.Status, a.RunId!.Value));
         Assert.Equal("부스 크기를 3x3으로 할까요?", a.Title);
-        Assert.Equal("1. 3x3\n2. 6x3", a.Detail);
+        Assert.Equal("""{"question":"부스 크기를 3x3으로 할까요?","options":["3x3","6x3"]}""", a.Detail);
     }
 
     [Fact]
@@ -296,7 +296,7 @@ public sealed class McpToolsTests(TestHost host) : IClassFixture<TestHost>
         Assert.Contains("질문을 입력해 주세요.", Assert.IsType<TextContentBlock>(Assert.Single(blank.Content)).Text);
         using var scope = host.Services.CreateScope();
         var a = await scope.ServiceProvider.GetRequiredService<OfnrDb>().Approvals.SingleAsync(x => x.JobId == s.JobId, Ct);
-        Assert.Equal("1. 검정\n2. 흰색", a.Detail);
+        Assert.Equal("""{"question":"색은?","options":["검정","흰색"]}""", a.Detail);
     }
 
     [Fact]

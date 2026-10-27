@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Text;
 
 namespace Ofnr.Server.Ops;
 
@@ -54,15 +55,18 @@ public static class Bootstrap
         File.Copy(src, dst);
     }
 
-    static bool Git(string dir, params string[] args)
+    static bool Git(string dir, params string[] args) => GitOutput(dir, args) is not null;
+
+    /// <summary>Git's standard output, or null when it failed. Throws <see cref="Win32Exception"/> when git is not on PATH.</summary>
+    public static string? GitOutput(string dir, params string[] args)
     {
-        var psi = new ProcessStartInfo("git") { WorkingDirectory = dir, RedirectStandardOutput = true, RedirectStandardError = true };
+        var psi = new ProcessStartInfo("git") { WorkingDirectory = dir, RedirectStandardOutput = true, RedirectStandardError = true, StandardOutputEncoding = Encoding.UTF8 };
         foreach (var a in args) psi.ArgumentList.Add(a);
         using var p = Process.Start(psi)!;
-        _ = p.StandardOutput.ReadToEndAsync();
+        var output = p.StandardOutput.ReadToEndAsync();
         _ = p.StandardError.ReadToEndAsync();
-        if (p.WaitForExit(TimeSpan.FromSeconds(30))) return p.ExitCode == 0;
+        if (p.WaitForExit(TimeSpan.FromSeconds(30))) return p.ExitCode == 0 ? output.Result : null;
         p.Kill(entireProcessTree: true); // a GPG or credential prompt must not keep the server from starting
-        return false;
+        return null;
     }
 }

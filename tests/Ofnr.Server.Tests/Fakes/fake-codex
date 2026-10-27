@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
 # Fake Codex CLI: logs args, env and stdin next to $FAKE_LOG (NUL-separated), then prints canned JSONL for $FAKE_SCENARIO.
+# The health probes: a version other than the pinned one, and logged out.
+case "$*" in
+  --version) echo "codex-cli 0.163.0"; exit 0 ;;
+  "login status") echo "Not logged in"; exit 1 ;;
+esac
 printf '%s\0' "$@" > "$FAKE_LOG.args"
 env -0 > "$FAKE_LOG.env"
 cat > "$FAKE_LOG.stdin"

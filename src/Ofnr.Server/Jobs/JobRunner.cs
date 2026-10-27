@@ -7,15 +7,15 @@ using Microsoft.Extensions.AI;
 using Ofnr.Server.Agents;
 using Ofnr.Server.Data;
 using Ofnr.Server.Mcp;
-using Ofnr.Server.Ops;
 using Ofnr.Server.Projects;
 using Ofnr.Server.Realtime;
+using Ofnr.Server.Skills;
 
 namespace Ofnr.Server.Jobs;
 
 /// <summary>Runs one job run on its engine and records everything it does. <see cref="JobQueue"/> decides when.</summary>
 public sealed class JobRunner(IServiceScopeFactory scopes, SettingsStore settings, RecipeCatalog recipes, AgentFactory agents, JobTokens tokens,
-    IOpsNotifier notifier, IHostApplicationLifetime lifetime)
+    IOpsNotifier notifier, IHostApplicationLifetime lifetime, SkillStore skills)
 {
     static readonly JsonSerializerOptions ResultJson = new() { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower };
 
@@ -122,7 +122,7 @@ public sealed class JobRunner(IServiceScopeFactory scopes, SettingsStore setting
 
             job.Result = ParseResult(final.ToString());
             if (before is not null) await RegisterArtifactsAsync(db, job, recipe.DocCode, folder!, before);
-            var unrecorded = recipe.Id == "skill-learning" && !await CommitLearningAsync(db, jobId, o.PluginDir);
+            var unrecorded = recipe.Id == "skill-learning" && !await CommitLearningAsync(db, jobId);
             if (unrecorded) await Log("warning", "스킬 변경을 기록하지 못했습니다. 스킬 파일이 바뀌었는지 확인해 주세요.");
             if (job.Result.Summary.Length > 0) await Log("result", job.Result.Summary);
             // Only this run's questions: one an earlier run left open must not hold every later run back from review.
@@ -250,10 +250,9 @@ public sealed class JobRunner(IServiceScopeFactory scopes, SettingsStore setting
     }
 
     /// <summary>False when the plugin keeps a git history and the change did not reach it: the run changed nothing, or git failed.</summary>
-    static async Task<bool> CommitLearningAsync(OfnrDb db, Guid jobId, string pluginDir)
+    async Task<bool> CommitLearningAsync(OfnrDb db, Guid jobId)
     {
         var f = await db.Feedback.Where(f => f.LearningJobId == jobId).Select(f => new { f.SkillName, f.Job.Project!.JobNo }).FirstOrDefaultAsync();
-        return f?.SkillName is not { } name || !Directory.Exists(Path.Combine(pluginDir, ".git"))
-            || Bootstrap.GitCommit(pluginDir, $"skill({name}): 학습 {f.JobNo ?? DateTimeOffset.Now.ToString("yyyy-MM-dd")}", $"skills/{name}");
+        return f?.SkillName is not { } name || await skills.CommitLearningAsync(name, f.JobNo ?? DateTimeOffset.Now.ToString("yyyy-MM-dd"));
     }
 }

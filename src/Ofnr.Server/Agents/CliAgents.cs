@@ -71,9 +71,7 @@ public abstract class CliAgent(string name, string exe, string workDir, IReadOnl
             StandardInputEncoding = new UTF8Encoding(false),
         };
         foreach (var a in BuildArgs(run, resumeId, schema, extraArgs)) psi.ArgumentList.Add(a);
-        foreach (var k in psi.Environment.Keys.Where(k => StrippedEnv.Contains(k, StringComparer.OrdinalIgnoreCase)
-            || k.StartsWith("CLAUDE_CODE_", StringComparison.OrdinalIgnoreCase) && !k.Equals(GitBashPath, StringComparison.OrdinalIgnoreCase)).ToList())
-            psi.Environment.Remove(k);
+        StripEnv(psi);
         if (env is not null) foreach (var (k, v) in env) psi.Environment[k] = v;
 
         using var p = Start(psi);
@@ -140,6 +138,14 @@ public abstract class CliAgent(string name, string exe, string workDir, IReadOnl
         {
             Kill(p);
         }
+    }
+
+    /// <summary>Removes what would switch the CLI away from the subscription login or into a parent session's settings.</summary>
+    public static void StripEnv(ProcessStartInfo psi)
+    {
+        foreach (var k in psi.Environment.Keys.Where(k => StrippedEnv.Contains(k, StringComparer.OrdinalIgnoreCase)
+            || k.StartsWith("CLAUDE_CODE_", StringComparison.OrdinalIgnoreCase) && !k.Equals(GitBashPath, StringComparison.OrdinalIgnoreCase)).ToList())
+            psi.Environment.Remove(k);
     }
 
     static Process Start(ProcessStartInfo psi)

@@ -1,10 +1,10 @@
+using System.Data.Common;
 using System.Net;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.FileProviders;
 using ModelContextProtocol.AspNetCore;
-using Npgsql;
 using Ofnr.Server;
 using Ofnr.Server.Agents;
 using Ofnr.Server.Data;
@@ -15,6 +15,7 @@ using Ofnr.Server.Ops;
 using Ofnr.Server.Projects;
 using Ofnr.Server.Realtime;
 using Ofnr.Server.Security;
+using Ofnr.Server.Skills;
 
 var builder = WebApplication.CreateBuilder(args);
 // Request logs would print the SignalR ?access_token= query.
@@ -50,6 +51,11 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<MailTriage>());
 builder.Services.AddSingleton<MailSync>();
 builder.Services.AddSingleton<IMailSync>(sp => sp.GetRequiredService<MailSync>());
 builder.Services.AddHostedService(sp => sp.GetRequiredService<MailSync>());
+builder.Services.AddSingleton<SkillStore>();
+builder.Services.AddSingleton<IDumpRunner, PgDumpRunner>();
+builder.Services.AddSingleton<Backup>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<Backup>());
+builder.Services.AddSingleton<Health>();
 builder.Services.AddMcpServer()
     .WithHttpTransport(o => o.SessionMode = HttpServerSessionMode.Stateless)
     .WithTools<OfnrTools>();
@@ -73,17 +79,28 @@ catch (Exception e) when (e is InvalidDataException or IOException)
     Console.Error.WriteLine(e.Message);
     return 1;
 }
-string? dbError = null;
+var health = app.Services.GetRequiredService<Health>();
+var backingUp = false;
 try
 {
     using var scope = app.Services.CreateScope();
-    await scope.ServiceProvider.GetRequiredService<OfnrDb>().Database.MigrateAsync();
+    var database = scope.ServiceProvider.GetRequiredService<OfnrDb>().Database;
+    // A rollback point before an update changes the structure of a database in use; a new database has nothing to lose.
+    if ((await database.GetPendingMigrationsAsync()).Any() && (await database.GetAppliedMigrationsAsync()).Any())
+    {
+        backingUp = true;
+        await app.Services.GetRequiredService<Backup>().RunOnceAsync("pre-migrate");
+        backingUp = false;
+    }
+    await database.MigrateAsync();
 }
-catch (NpgsqlException e)
+catch (Exception e)
 {
-    // Keeps serving so the first-run check screen can say PostgreSQL is missing or stopped.
-    dbError = $"데이터베이스에 연결하지 못했습니다: {e.Message}";
-    Console.Error.WriteLine(dbError);
+    // Keeps serving so the check screen can say PostgreSQL is missing or stopped, or why the update was not applied.
+    health.MigrateError = backingUp ? $"백업하지 못해 데이터베이스 업데이트를 적용하지 않았습니다. 앱을 다시 시작해 주세요: {e.Message}"
+        : e is DbException ? $"데이터베이스에 연결하지 못했습니다: {e.Message}"
+        : $"데이터베이스 업데이트를 적용하지 못했습니다: {e.Message}";
+    Console.Error.WriteLine(health.MigrateError);
 }
 
 app.UseLocalAccess();
@@ -97,10 +114,11 @@ app.Use(async (ctx, next) =>
     }
 });
 
-app.MapGet("/api/health", (IMailSync mail) => Health.Build(settings.Current, dbError, mail.Health));
+app.MapOpsEndpoints();
 app.MapProjectEndpoints();
 app.MapMailEndpoints();
 app.MapJobEndpoints();
+app.MapSkillEndpoints();
 app.MapHub<OpsHub>("/hubs/ops");
 app.UseWhen(ctx => ctx.Request.Path.StartsWithSegments("/mcp"), mcp => mcp.Use(JobTokens.Authenticate));
 app.MapMcp("/mcp");

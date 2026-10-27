@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Ofnr.Server.Data;
 using Ofnr.Server.Jobs;
+using Ofnr.Server.Ops;
 
 namespace Ofnr.Server;
 
@@ -99,3 +100,42 @@ public sealed record MailDraftDto(
 {
     public static MailDraftDto From(MailDraft d) => new(d.Id, d.ReplyToMailId, d.ProjectId, d.To, d.Cc, d.Subject, d.Body, d.Attachments, d.Author, d.Status, d.CreatedAt, d.SentAt);
 }
+
+/// <param name="Content">The whole SKILL.md; null in the list.</param>
+public sealed record SkillDto(string Name, string Description, string[] LearnedRules, string? Content);
+
+public sealed record SkillInput(string? Content);
+
+public sealed record SkillHistoryDto(string Commit, DateTimeOffset Date, string Message);
+
+public sealed record RevertInput(string? Commit);
+
+/// <summary>The settings without the connection string (passwords live in SecretStore).</summary>
+public sealed record SettingsDto(
+    string DataRoot, string ProjectsRoot, string JobsRoot, string PluginDir, string TemplatesDir, string BackupsDir, int Port,
+    string ClaudeExe, string CodexExe, string DefaultEngine, int MaxConcurrentJobs, int MailSyncMinutes, bool AutoTriage, bool AppendSentCopy,
+    string? ClaudeModel, string? CodexModel, string PgDumpPath, MailAccount Mail)
+{
+    public static SettingsDto From(OfnrOptions o) => new(
+        o.DataRoot, o.ProjectsRoot, o.JobsRoot, o.PluginDir, o.TemplatesDir, o.BackupsDir, o.Port, o.ClaudeExe, o.CodexExe, o.DefaultEngine,
+        o.MaxConcurrentJobs, o.MailSyncMinutes, o.AutoTriage, o.AppendSentCopy, o.ClaudeModel, o.CodexModel, o.PgDumpPath, o.Mail);
+}
+
+public sealed record PasswordInput(string? Password);
+
+/// <param name="Kind">approval, review, failed or blocked.</param>
+/// <param name="ApprovalKind">The approval's kind when <paramref name="Kind"/> is approval; question comes from ask_ceo.</param>
+public sealed record AttentionDto(string Kind, Guid JobId, string Title, string? Detail, Guid? ApprovalId, string? ApprovalKind);
+
+/// <param name="Kind">install, open, end or teardown.</param>
+public sealed record UpcomingDto(Guid ProjectId, string JobNo, string ProjectName, string Kind, DateOnly Date);
+
+public sealed record TodayCounts(int Attention, int Running, int ThisWeek);
+
+public sealed record TodayDto(TodayCounts Counts, List<AttentionDto> Attention, List<MailSummaryDto> UnsortedMail, List<UpcomingDto> Upcoming, List<JobDto> Running);
+
+public sealed record RecipeCostDto(string RecipeId, decimal Usd, int Runs);
+
+public sealed record CostsDto(decimal MonthUsd, List<RecipeCostDto> ByRecipe);
+
+public sealed record AgentsDto(List<JobDto> Running, List<JobDto> Queued, IReadOnlyList<LockDto> Locks, CostsDto Costs, EngineDto[] Engines);

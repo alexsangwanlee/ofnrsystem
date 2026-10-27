@@ -1,3 +1,5 @@
+using System.Text.Encodings.Web;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Ofnr.Server.Data;
 using Ofnr.Server.Realtime;
@@ -9,21 +11,27 @@ public sealed class Approvals(OfnrDb db, IOpsNotifier notifier)
 {
     static readonly string[] Decisions = ["accept", "edit", "respond", "ignore"];
 
-    public async Task<ApprovalDto> CreateQuestionAsync(Guid jobId, Guid? runId, string question, string[]? options)
+    static readonly JsonSerializerOptions DetailJson = new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping }; // Korean stays readable in the table
+
+    /// <summary>Title is the question cut to 80 chars; Detail is JSON <c>{"question", "options"}</c>, the API Contract's question format.</summary>
+    public async Task<ApprovalDto> CreateQuestionAsync(Guid jobId, Guid? runId, string question, string?[]? options)
     {
+        question = question.Trim();
         var a = new Approval
         {
             JobId = jobId,
             RunId = runId,
             Kind = "question",
-            Title = question.Trim(),
-            Detail = string.Join("\n", (options ?? []).Where(o => !string.IsNullOrWhiteSpace(o)).Select((o, i) => $"{i + 1}. {o.Trim()}")),
+            // Never ends on half a surrogate pair, which PostgreSQL would reject.
+            Title = question.Length <= 80 ? question : question[..(char.IsHighSurrogate(question[79]) ? 79 : 80)],
+            Detail = JsonSerializer.Serialize(
+                new { question, options = (options ?? []).Where(o => !string.IsNullOrWhiteSpace(o)).Select(o => o!.Trim()) }, DetailJson),
         };
         db.Approvals.Add(a);
         await db.SaveChangesAsync();
         var dto = ApprovalDto.From(a);
         await notifier.ApprovalRequested(dto);
-        await notifier.Notify("확인이 필요합니다", a.Title, $"/jobs/{jobId}");
+        await notifier.Notify("확인이 필요합니다", question, $"/jobs/{jobId}");
         return dto;
     }
 

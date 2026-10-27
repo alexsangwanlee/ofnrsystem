@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
 # Fake Claude Code CLI: logs args, env and stdin next to $FAKE_LOG (NUL-separated), then prints canned stream-json for $FAKE_SCENARIO.
+# The health probes: --version and auth status (logged in).
+case "$*" in
+  --version) echo "2.1.311 (Claude Code)"; exit 0 ;;
+  "auth status") echo '{"loggedIn": true}'; exit 0 ;;
+esac
 printf '%s\0' "$@" > "$FAKE_LOG.args"
 env -0 > "$FAKE_LOG.env"
 cat > "$FAKE_LOG.stdin"

@@ -1,16 +1,13 @@
-using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using Ofnr.Server.Data;
 using Ofnr.Server.Realtime;
+using Ofnr.Server.Skills;
 using static Ofnr.Server.Projects.ProjectEndpoints;
 
 namespace Ofnr.Server.Jobs;
 
-public static partial class JobEndpoints
+public static class JobEndpoints
 {
-    [GeneratedRegex("^[a-z0-9-]+$")]
-    private static partial Regex SkillName();
-
     public static async Task<List<JobDto>> ToDtosAsync(this IQueryable<Job> q, OfnrDb db, RecipeCatalog recipes) =>
         (await q.Select(j => new JobDto(
                 j.Id, j.ProjectId, j.Project != null ? j.Project.JobNo : null, j.RecipeId, j.RecipeId, j.Title, j.Engine, j.Status, j.CreatedAt, j.UpdatedAt,
@@ -106,7 +103,7 @@ public static partial class JobEndpoints
             var skill = string.IsNullOrWhiteSpace(input.SkillName) ? null : input.SkillName.Trim();
             // The absolute path: Codex works on copies of the recipe's skills and would otherwise edit a copy.
             var skillFile = skill is null ? null : Path.Combine(o.PluginDir, "skills", skill, "SKILL.md");
-            if (skill is not null && (!SkillName().IsMatch(skill) || !File.Exists(skillFile))) return Error(400, "알 수 없는 스킬입니다.");
+            if (skill is not null && (!SkillStore.ValidName().IsMatch(skill) || !File.Exists(skillFile))) return Error(400, "알 수 없는 스킬입니다.");
 
             var feedback = new Feedback { JobId = id, Text = input.Text.Trim(), SkillName = skill };
             db.Feedback.Add(feedback);
@@ -147,7 +144,8 @@ public static partial class JobEndpoints
         });
     }
 
-    static async Task<JobDto> QueuedAsync(OfnrDb db, RecipeCatalog recipes, IJobQueue queue, IOpsNotifier ops, Guid jobId)
+    /// <summary>Announces a job just saved as queued and wakes the queue.</summary>
+    internal static async Task<JobDto> QueuedAsync(OfnrDb db, RecipeCatalog recipes, IJobQueue queue, IOpsNotifier ops, Guid jobId)
     {
         var dto = await DtoAsync(db, recipes, jobId);
         await ops.JobUpdated(dto);
