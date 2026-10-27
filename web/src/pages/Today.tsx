@@ -3,7 +3,7 @@ import { useNavigate } from "react-router";
 import { Badge, Body1, Button, Caption1, makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
 import { ApprovalCard } from "../components/ApprovalCard";
 import { EmptyState } from "../components/EmptyState";
-import { Async, Kpi, Page, RouterLink, Section, useApi, useUi } from "../components/ui";
+import { Async, Kpi, Page, RouterLink, Section, useApi, useFlash, useUi } from "../components/ui";
 import { DATE_KINDS, dday, formatDate } from "../format";
 import { joinJob, leaveJob, useOps } from "../realtime";
 import type { TodayDto } from "../types";
@@ -21,7 +21,7 @@ export function Today() {
   const navigate = useNavigate();
   const today = useApi<TodayDto>("/api/today");
   const [lastLine, setLastLine] = useState<Record<string, string>>({});
-  const [answered, setAnswered] = useState<string>();
+  const [answered, setAnswered] = useFlash();
 
   useOps({
     jobUpdated: today.reload,
@@ -55,7 +55,9 @@ export function Today() {
             </div>
             <div className={s.grid}>
               <Section title="확인 필요">
-                {answered && <Caption1 aria-live="polite">{answered}</Caption1>}
+                <Caption1 aria-live="polite" className={ui.live}>
+                  {answered}
+                </Caption1>
                 {t.attention.length === 0 ? (
                   <div className={ui.card}>
                     <EmptyState

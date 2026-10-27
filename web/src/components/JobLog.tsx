@@ -25,7 +25,7 @@ const useStyles = makeStyles({
   error: { color: tokens.colorStatusDangerForeground1, fontWeight: tokens.fontWeightSemibold },
   tool: {
     color: tokens.colorNeutralForeground3,
-    "& > summary": { cursor: "pointer", listStylePosition: "inside" },
+    "& > summary": { cursor: "pointer", listStylePosition: "inside", overflowWrap: "anywhere" },
   },
   args: {
     margin: `${tokens.spacingVerticalXS} 0 0 ${tokens.spacingHorizontalXXL}`,

@@ -227,6 +227,7 @@ const healthDto: HealthDto = {
 };
 
 afterEach(() => {
+  vi.useRealTimers();
   cleanup();
   vi.unstubAllGlobals();
   tauri.on = false;
@@ -292,7 +293,7 @@ describe("pages", () => {
       kind: "approval" as const,
       jobId: "j1",
       title: "견적서 · 성수 팝업",
-      detail: JSON.stringify({ question: "부가세를 포함할까요?", options: ["포함", "별도"] }),
+      detail: JSON.stringify({ question: "부가세를 포함할까요?", options: ["포함", "별도", "포함"] }),
       approvalId: "a1",
       approvalKind: "question",
     };
@@ -307,18 +308,26 @@ describe("pages", () => {
       }),
       "POST /api/approvals/a1/decide": { id: "a1", status: "Decided", decision: "accept" },
     });
-    renderAt(<Today />);
+    vi.useFakeTimers({ shouldAdvanceTime: true, toFake: ["setTimeout", "clearTimeout"] });
+    const { container } = renderAt(<Today />);
 
     const card = await screen.findByRole("article", { name: "견적서 · 성수 팝업" });
     expect(within(card).getByText("AI 질문")).toBeTruthy();
     expect(within(card).getByText("부가세를 포함할까요?")).toBeTruthy();
-    for (const name of ["포함", "별도", "답변 보내기", "무시"]) expect(within(card).getByRole("button", { name })).toBeTruthy();
+    for (const name of ["포함", "별도", "답변 보내기", "무시"]) expect(within(card).getAllByRole("button", { name })).toHaveLength(1);
     expect(within(card).queryByRole("button", { name: "승인" })).toBeNull();
+    // Mounted empty before the answer, so screen readers announce the text when it arrives.
+    const live = container.querySelector('[aria-live="polite"]')!;
+    expect(live.textContent).toBe("");
 
     fireEvent.click(within(card).getByRole("button", { name: "별도" }));
-    expect(await screen.findByText("답변을 보냈습니다. 같은 작업이 이어서 실행됩니다.")).toBeTruthy();
+    await waitFor(() => expect(live.textContent).toBe("답변을 보냈습니다. 같은 작업이 이어서 실행됩니다."));
     await waitFor(() => expect(screen.queryByRole("article", { name: "견적서 · 성수 팝업" })).toBeNull());
     expect(calls).toContainEqual({ method: "POST", path: "/api/approvals/a1/decide", body: { decision: "accept", text: "별도" } });
+
+    act(() => void vi.advanceTimersByTime(10_000));
+    expect(live.textContent).toBe("");
+    expect(container.querySelector('[aria-live="polite"]')).toBe(live);
   });
 
   it("Question_card_sends_typed_answer_only_on_ctrl_enter_outside_ime_and_ignore_closes", async () => {
@@ -333,7 +342,10 @@ describe("pages", () => {
     fireEvent.keyDown(box, { key: "Enter" });
     fireEvent.keyDown(box, { key: "Enter", ctrlKey: true, isComposing: true });
     fireEvent.keyDown(box, { key: "Enter", ctrlKey: true, keyCode: 229 });
+    // api() awaits server info before fetch, so let a wrongly sent request reach the mock first.
+    await act(() => new Promise((r) => setTimeout(r, 0)));
     expect(calls).toEqual([]);
+    expect(onDone).not.toHaveBeenCalled();
 
     expect(fireEvent.keyDown(box, { key: "Enter", ctrlKey: true, keyCode: 13 })).toBe(false);
     await waitFor(() => expect(onDone).toHaveBeenCalledWith("답변을 보냈습니다. 같은 작업이 이어서 실행됩니다."));
@@ -344,6 +356,13 @@ describe("pages", () => {
     fireEvent.click(screen.getByRole("button", { name: "무시" }));
     await waitFor(() => expect(onDone).toHaveBeenLastCalledWith("질문을 닫았습니다."));
     expect(calls[1].body).toEqual({ decision: "ignore" });
+  });
+
+  it("Question_card_without_body_text_shows_the_full_question_from_the_title", () => {
+    const title = "현장 사진이 없는데 도면 기준으로 설치 위치를 정해서 견적을 계속 진행해도 될까요?";
+    renderAt(<ApprovalCard item={{ kind: "approval", jobId: "j1", title, detail: "", approvalId: "a1", approvalKind: "question" }} />);
+    // One copy in the one-line title, one in the body that wraps.
+    expect(screen.getAllByText(title)).toHaveLength(2);
   });
 
   it("JobDetail_shows_pending_question_as_ai_question_and_confirms_the_answer", async () => {

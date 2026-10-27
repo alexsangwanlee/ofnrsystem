@@ -30,7 +30,7 @@ function parseQuestion(detail: string | null): { question: string; options: stri
   try {
     const j = JSON.parse(detail ?? "");
     if (typeof j?.question === "string")
-      return { question: j.question, options: Array.isArray(j.options) ? j.options.filter((o: unknown) => typeof o === "string") : [] };
+      return { question: j.question, options: Array.isArray(j.options) ? [...new Set<string>(j.options.filter((o: unknown) => typeof o === "string"))] : [] };
   } catch {
     // Not JSON: the detail is the question itself.
   }
@@ -51,7 +51,8 @@ export function ApprovalCard({ item, onDone }: { item: AttentionDto; onDone?: (m
   const [missing, setMissing] = useState(false);
   const approval = item.kind === "approval" && item.approvalId;
   const asked = approval && item.approvalKind === "question" ? parseQuestion(item.detail) : undefined;
-  const detail = asked ? asked.question : item.detail;
+  // The title is cut to one line, so a question with no body text is repeated in full here.
+  const detail = asked ? asked.question || item.title : item.detail;
 
   const decide = async (decision: Decision, answer?: string) => {
     const body = answer === undefined ? { decision } : { decision, text: answer };

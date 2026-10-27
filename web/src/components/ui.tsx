@@ -43,6 +43,8 @@ export const useUi = makeStyles({
   muted: { color: tokens.colorNeutralForeground3 },
   error: { color: tokens.colorStatusDangerForeground1 },
   section: { display: "flex", flexDirection: "column", gap: tokens.spacingVerticalS, minWidth: 0 },
+  // An always-mounted aria-live region; while empty it leaves the flex flow so it adds no gap.
+  live: { ":empty": { position: "absolute" } },
   sectionHead: { display: "flex", alignItems: "center", gap: tokens.spacingHorizontalS, minHeight: "32px" },
   card: {
     display: "flex",
@@ -160,6 +162,20 @@ export function useAction() {
     }
   }, []);
   return { busy, error, run };
+}
+
+/**
+ * A confirmation for an always-mounted aria-live region (screen readers skip regions created already filled).
+ * It clears itself so it never sits above items that arrive later; each set restarts the timer.
+ */
+export function useFlash() {
+  const [flash, setFlash] = useState<{ text: string }>();
+  useEffect(() => {
+    if (!flash) return;
+    const t = setTimeout(() => setFlash(undefined), 10_000);
+    return () => clearTimeout(t);
+  }, [flash]);
+  return [flash?.text, (text?: string) => setFlash(text ? { text } : undefined)] as const;
 }
 
 /** Blur-first validation: errors show after a field is left, hide while it is being corrected. */

@@ -6,7 +6,7 @@ import { api } from "../api";
 import { ApprovalCard } from "../components/ApprovalCard";
 import { joinPath, openPath } from "../components/FileList";
 import { JobLog } from "../components/JobLog";
-import { Async, Confirm, ErrorBar, JobStatusBadge, Page, RouterLink, Section, useAction, useApi, useUi } from "../components/ui";
+import { Async, Confirm, ErrorBar, JobStatusBadge, Page, RouterLink, Section, useAction, useApi, useFlash, useUi } from "../components/ui";
 import { ENGINE, formatDate, formatTime, formatUsd } from "../format";
 import { useOps } from "../realtime";
 import type { JobDetailDto, ProjectDetailDto, SkillDto } from "../types";
@@ -36,7 +36,7 @@ export function JobDetail() {
   const [skill, setSkill] = useState("");
   const [feedbackMissing, setFeedbackMissing] = useState(false);
   const [note, setNote] = useState<string>();
-  const [answered, setAnswered] = useState<string>();
+  const [answered, setAnswered] = useFlash();
 
   useOps({
     jobUpdated: (j) => j.id === id && detail.reload(),
@@ -109,7 +109,9 @@ export function JobDetail() {
           >
             {action.error && <ErrorBar message={action.error} />}
             {project.error && <ErrorBar message={project.error} onRetry={project.reload} />}
-            {answered && <Caption1 aria-live="polite">{answered}</Caption1>}
+            <Caption1 aria-live="polite" className={ui.live}>
+              {answered}
+            </Caption1>
             {pending.length > 0 && (
               <div className={s.cards}>
                 {pending.map((a) => (
