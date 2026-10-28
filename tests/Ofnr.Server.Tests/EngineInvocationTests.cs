@@ -63,7 +63,7 @@ public sealed class EngineInvocationTests : IDisposable
         Assert.Null(plan.SchemaPath);
         Assert.Equal(
             ["--plugin-dir", o.PluginDir, "--mcp-config", mcpPath, "--strict-mcp-config", "--permission-mode", "dontAsk",
-             "--allowedTools", $"Read,Write(/{Folder}/**),Write(/{plan.WorkDir}/**),Edit(/{Folder}/**),Edit(/{plan.WorkDir}/**),Glob,Grep,Skill,TodoWrite,mcp__ofnr__*,mcp__excel__*",
+             "--allowedTools", $"Read,Edit(/{Folder}/**),Edit(/{plan.WorkDir}/**),Glob,Grep,Skill,TodoWrite,mcp__ofnr__*,mcp__excel__*",
              "--disallowedTools", "Bash",
              "--append-system-prompt", "시스템 지시", "--add-dir", Folder, "--model", "opus"],
             plan.ExtraArgs);
@@ -72,12 +72,13 @@ public sealed class EngineInvocationTests : IDisposable
         var learn = EngineInvocation.Build(learning.Recipe, learning, o, "t", "s").ExtraArgs.ToArray();
         Assert.Equal(Path.Combine(o.PluginDir, "skills"), learn[Array.IndexOf(learn, "--add-dir") + 1]);
 
-        // A bare Write or Edit would reach any file, a job without a project folder included.
+        // A bare Write or Edit would reach any file, a job without a project folder included. Claude Code 2.1.312 ignores
+        // Write(path) and warns "only Edit(path) rules are" matched, so every scope is an Edit rule.
         var free = Ctx("free", "claude", null);
         var freePlan = EngineInvocation.Build(free.Recipe, free, o, "t", "s");
         static string[] Allowed(IReadOnlyList<string> a) => a[a.ToList().IndexOf("--allowedTools") + 1].Split(',');
-        Assert.All(new[] { plan.ExtraArgs, learn, freePlan.ExtraArgs }, a => Assert.DoesNotContain(Allowed(a), t => t is "Write" or "Edit"));
-        Assert.Contains($"Write(/{freePlan.WorkDir}/**)", Allowed(freePlan.ExtraArgs));
+        Assert.All(new[] { plan.ExtraArgs, learn, freePlan.ExtraArgs }, a => Assert.DoesNotContain(Allowed(a), t => t is "Write" or "Edit" || t.StartsWith("Write(")));
+        Assert.Equal([$"Edit(/{freePlan.WorkDir}/**)"], Allowed(freePlan.ExtraArgs).Where(t => t.StartsWith("Edit(")));
 
         File.Delete(Path.Combine(root, "mcp.json"));
         var e = Assert.Throws<InvalidOperationException>(() => EngineInvocation.Build(ctx.Recipe, ctx, o, "t", "s"));

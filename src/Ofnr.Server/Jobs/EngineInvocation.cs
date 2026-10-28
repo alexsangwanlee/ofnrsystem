@@ -46,9 +46,10 @@ public static class EngineInvocation
             var mcpPath = Path.Combine(work, "mcp.json");
             File.WriteAllText(mcpPath, new JsonObject { ["mcpServers"] = mcp }.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
 
-            // Bare Write/Edit reach any path, such as <data>\mcp.json, whose commands every later job starts.
+            // Bare Write/Edit reach any path, such as <data>\mcp.json, whose commands every later job starts. Claude Code checks
+            // every file write against Edit(path) rules only; a Write(path) rule matches nothing and prints a warning.
             string[] scopes = [.. new[] { writable, work }.OfType<string>().Distinct().Select(PathRule)];
-            var allowed = r.Claude.AllowedTools.SelectMany(t => t is "Write" or "Edit" ? scopes.Select(s => $"{t}({s})") : [t]);
+            var allowed = r.Claude.AllowedTools.SelectMany(t => t is "Write" or "Edit" ? scopes.Select(s => $"Edit({s})") : [t]).Distinct();
             args.AddRange(["--plugin-dir", o.PluginDir, "--mcp-config", mcpPath, "--strict-mcp-config", "--permission-mode", r.Claude.PermissionMode,
                 "--allowedTools", string.Join(",", allowed.Concat(r.McpServers.Select(s => $"mcp__{s}__*")))]);
             string[] disallowed = r.UntrustedMailInPrompt ? r.Claude.DisallowedTools : [.. r.Claude.DisallowedTools, "mcp__ofnr__" + MailTool];
