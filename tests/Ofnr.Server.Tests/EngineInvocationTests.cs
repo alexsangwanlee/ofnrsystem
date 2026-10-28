@@ -138,6 +138,7 @@ public sealed class EngineInvocationTests : IDisposable
     [Theory]
     [InlineData("model3d", "Bash,mcp__ofnr__get_mail_thread,mcp__sketchup__eval_ruby")]
     [InlineData("graphic", "Bash,mcp__ofnr__get_mail_thread")]
+    [InlineData("document", "mcp__ofnr__get_mail_thread")]
     public void Script_recipes_cannot_read_mail_through_the_dashboard(string recipe, string denied)
     {
         var o = Options();
@@ -149,6 +150,10 @@ public sealed class EngineInvocationTests : IDisposable
 
         Assert.Equal(denied, args[Array.IndexOf(args, "--disallowedTools") + 1]);
         Assert.Contains("mcp_servers.ofnr.disabled_tools=[\"get_mail_thread\"]", c);
+        // The docx recipes get a shell; Write and Edit stay held to the job's folders by rule.
+        var allowed = args[Array.IndexOf(args, "--allowedTools") + 1].Split(',');
+        Assert.Equal(recipe == "document", allowed.Contains("Bash"));
+        Assert.DoesNotContain(allowed, t => t is "Write" or "Edit");
     }
 
     [Fact]
@@ -194,6 +199,7 @@ public sealed class EngineInvocationTests : IDisposable
         Assert.Contains("ofnr:quote", system);
         Assert.Contains(template, system);
         Assert.Contains("신뢰할 수 없는", system);
+        Assert.Contains("00_IN의 받은 자료", system);
         Assert.Contains("메일을 보내지 마세요", system);
         Assert.Contains("견적서를 만들어 주세요", user);
         Assert.Contains("성수 팝업", user);

@@ -38,10 +38,16 @@ public sealed class RecipeTests
             Assert.Equal("dontAsk", r.Claude.PermissionMode);
             Assert.Equal("workspace-write", r.Codex.Sandbox);
             Assert.Equal(r.Id is not ("skill-learning" or "free"), r.NeedsProject);
-            Assert.Equal(r.Lock is not ("sketchup" or "illustrator" or "photoshop"), r.UntrustedMailInPrompt);
+            // A shell or a script-running app is not held to the job's folders, so those recipes never read mail.
+            var shell = r.Claude.AllowedTools.Contains("Bash");
+            Assert.Equal(r.Lock is not ("sketchup" or "illustrator" or "photoshop") && !shell, r.UntrustedMailInPrompt);
+            Assert.Equal(!shell, r.Claude.DisallowedTools.Contains("Bash"));
+            if (shell) Assert.All(r.Skills, s => Assert.DoesNotContain("get_mail_thread", File.ReadAllText(Path.Combine(Skills, s, "SKILL.md"))));
             Assert.DoesNotContain(r.Name + r.Prompt, c => c is '\u2013' or '\u2014');
         }
         Assert.Equal(["brief", "free", "reply", "skill-learning"], catalog.All.Where(r => r.Engines.Contains("codex")).Select(r => r.Id).Order());
+        // .docx has no MCP server: these write it with the Anthropic docx skill's scripts.
+        Assert.Equal(["document", "ops-manual", "report"], catalog.All.Where(r => r.Claude.AllowedTools.Contains("Bash")).Select(r => r.Id).Order());
         Assert.Equal(["excel"], catalog.Get("quote")!.McpServers);
         Assert.Equal(["sketchup"], catalog.Get("model3d")!.McpServers);
         Assert.Equal(["Read", "Write", "Edit", "Glob", "Grep", "Skill", "TodoWrite", "mcp__ofnr__*"], catalog.Get("brief")!.Claude.AllowedTools);

@@ -49,6 +49,8 @@
     "engines": ["claude"],
     "docCode": "DOC",
     "outputDir": "01_PLAN",
+    "untrustedMailInPrompt": false,
+    "claude": { "allowedTools": ["Read", "Write", "Edit", "Glob", "Grep", "Skill", "TodoWrite", "mcp__ofnr__*", "Bash"], "disallowedTools": [] },
     "prompt": "대표의 지시에 맞는 문서(계약서, 공문 등)를 만드세요."
   },
   {
@@ -59,6 +61,8 @@
     "engines": ["claude"],
     "docCode": "OPSMANUAL",
     "outputDir": "04_OPS",
+    "untrustedMailInPrompt": false,
+    "claude": { "allowedTools": ["Read", "Write", "Edit", "Glob", "Grep", "Skill", "TodoWrite", "mcp__ofnr__*", "Bash"], "disallowedTools": [] },
     "prompt": "현장 운영 매뉴얼을 만드세요."
   },
   {
@@ -99,6 +103,8 @@
     "engines": ["claude"],
     "docCode": "REPORT",
     "outputDir": "05_REPORT",
+    "untrustedMailInPrompt": false,
+    "claude": { "allowedTools": ["Read", "Write", "Edit", "Glob", "Grep", "Skill", "TodoWrite", "mcp__ofnr__*", "Bash"], "disallowedTools": [] },
     "prompt": "결과보고서를 만드세요."
   },
   {
