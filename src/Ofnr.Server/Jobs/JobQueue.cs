@@ -43,10 +43,9 @@ public sealed class JobQueue(IServiceScopeFactory scopes, SettingsStore settings
 
     sealed record Retry(string Lock, DateTimeOffset Next, DateTimeOffset Until);
 
-    // All four are guarded by gate.
+    // All three are guarded by gate, as is Job.PendingInstruction.
     readonly SemaphoreSlim gate = new(1, 1);
     readonly Dictionary<Guid, Active> running = [];
-    readonly Dictionary<Guid, string> followups = [];
     readonly Dictionary<Guid, Retry> retries = [];
 
     readonly SemaphoreSlim signal = new(0);
@@ -68,7 +67,9 @@ public sealed class JobQueue(IServiceScopeFactory scopes, SettingsStore settings
         try
         {
             retries.Remove(jobId);
-            followups.Remove(jobId);
+            using (var scope = scopes.CreateScope()) // a canceled job drops what it held for the next run
+                await scope.ServiceProvider.GetRequiredService<OfnrDb>().Jobs.Where(j => j.Id == jobId)
+                    .ExecuteUpdateAsync(s => s.SetProperty(j => j.PendingInstruction, (string?)null));
             if (running.TryGetValue(jobId, out var a))
             {
                 a.Cts.Cancel(); // the runner kills the engine and records the cancel
@@ -87,7 +88,12 @@ public sealed class JobQueue(IServiceScopeFactory scopes, SettingsStore settings
         {
             if (running.ContainsKey(jobId))
             {
-                followups[jobId] = followups.TryGetValue(jobId, out var earlier) ? $"{earlier}\n\n{instruction}" : instruction;
+                // In the database: the tray's 종료 kills the server mid-run, and an answered question cannot be answered again.
+                using var scope = scopes.CreateScope();
+                var db = scope.ServiceProvider.GetRequiredService<OfnrDb>();
+                var job = await db.Jobs.SingleAsync(j => j.Id == jobId);
+                job.PendingInstruction = job.PendingInstruction is { } earlier ? $"{earlier}\n\n{instruction}" : instruction;
+                await db.SaveChangesAsync();
                 return;
             }
             retries.Remove(jobId);
@@ -117,7 +123,7 @@ public sealed class JobQueue(IServiceScopeFactory scopes, SettingsStore settings
 
     /// <summary>
     /// For the start of the process only: runs still Working or Blocked belong to a server that stopped, so they become Stopped
-    /// and their jobs NeedsAttention. Queued jobs start again; pending questions stay pending.
+    /// and their jobs NeedsAttention, or Queued with the follow-up they held. Queued jobs start again; pending questions stay pending.
     /// </summary>
     public async Task RecoverAsync(CancellationToken ct)
     {
@@ -133,7 +139,10 @@ public sealed class JobQueue(IServiceScopeFactory scopes, SettingsStore settings
         }
         await db.SaveChangesAsync(ct);
         foreach (var r in stale.Where(r => r.Job.Status == JobStatus.NeedsAttention))
-            await JobEventLog.AppendAsync(db, notifier, r.JobId, r.Id, "warning", "서버가 다시 시작되어 작업이 멈췄습니다. 후속 지시로 이어서 진행하세요.", ct);
+        {
+            if (r.Job.PendingInstruction is not null) await QueueFollowupAsync(r.JobId, null);
+            else await JobEventLog.AppendAsync(db, notifier, r.JobId, r.Id, "warning", "서버가 다시 시작되어 작업이 멈췄습니다. 후속 지시로 이어서 진행하세요.", ct);
+        }
         recovered = true;
         Signal();
     }
@@ -239,18 +248,23 @@ public sealed class JobQueue(IServiceScopeFactory scopes, SettingsStore settings
         try
         {
             running.Remove(jobId);
-            if (followups.Remove(jobId, out var instruction) && !a.Cts.IsCancellationRequested) await QueueFollowupAsync(jobId, instruction);
+            // On an app stop the held text stays for the next start's recovery.
+            if (!a.Cts.IsCancellationRequested) await QueueFollowupAsync(jobId, null);
         }
         catch (Exception e) { logger.LogError(e, "Job {JobId} follow-up could not be queued", jobId); }
         finally { gate.Release(); }
         Signal();
     }
 
-    async Task QueueFollowupAsync(Guid jobId, string instruction)
+    /// <summary>Queues the next run with what the job held (<see cref="Job.PendingInstruction"/>) and then <paramref name="instruction"/>; does nothing when both are empty.</summary>
+    async Task QueueFollowupAsync(Guid jobId, string? instruction)
     {
         using var scope = scopes.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<OfnrDb>();
         var job = await db.Jobs.SingleAsync(j => j.Id == jobId);
+        instruction = string.Join("\n\n", new[] { job.PendingInstruction, instruction }.Where(t => !string.IsNullOrEmpty(t)));
+        if (instruction.Length == 0) return;
+        job.PendingInstruction = null;
         // The request the engine never got stays in front: no engine session yet, or the last run was held before its engine started.
         var undelivered = job.Status == JobStatus.Queued || job.EngineSession is null
             || await db.JobRuns.Where(r => r.JobId == jobId).OrderByDescending(r => r.Seq).Select(r => r.StartedAt).FirstOrDefaultAsync() is null;

@@ -519,4 +519,25 @@ public sealed class JobQueueTests
         await using var db = h.Db();
         Assert.Equal(1, await db.Approvals.CountAsync(a => a.JobId == id && a.Status == ApprovalStatus.Pending, Ct));
     }
+
+    [Fact]
+    public async Task Answer_held_during_a_run_survives_a_restart()
+    {
+        await using var h = new JobHost();
+        var (id, _) = await AskedJob(h);
+        h.Agents.Hold = true;
+        await h.Send(HttpMethod.Post, $"/api/jobs/{id}/followup", new { instruction = "계속해 주세요" });
+        await JobHost.WaitFor(() => h.Agents.Active.Count == 1);
+        var second = await Ask(h, id, "색은?");
+        await h.Send(HttpMethod.Post, $"/api/approvals/{second}/decide", new { decision = "accept", text = "검정" });
+        h.Agents.Hold = false;
+
+        await h.RestartAsync();
+
+        await h.WaitForStatus(id, JobStatus.Review);
+        Assert.Equal(3, h.Agents.Calls.Count);
+        Assert.Contains("대표 답변: 검정", h.Agents.Calls[2].Prompt);
+        Assert.Equal("sess-" + id.ToString("N"), h.Agents.Calls[2].ResumedSession);
+        Assert.Null((await h.Get(id)).PendingInstruction);
+    }
 }

@@ -297,6 +297,10 @@ namespace Ofnr.Server.Data.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("mail_id");
 
+                    b.Property<string>("PendingInstruction")
+                        .HasColumnType("text")
+                        .HasColumnName("pending_instruction");
+
                     b.Property<Guid?>("ProjectId")
                         .HasColumnType("uuid")
                         .HasColumnName("project_id");

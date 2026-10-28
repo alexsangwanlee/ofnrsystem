@@ -134,6 +134,8 @@ public sealed class Job
     public string RecipeId { get; set; } = "";
     public string Title { get; set; } = "";
     public string Instruction { get; set; } = "";
+    /// <summary>A follow-up or answer sent while a run was going; the next run starts with it, also after a restart.</summary>
+    public string? PendingInstruction { get; set; }
     public JobStatus Status { get; set; } = JobStatus.Queued;
     public string Engine { get; set; } = "claude"; // claude | codex
     public string Source { get; set; } = "manual"; // mail | stage | manual
