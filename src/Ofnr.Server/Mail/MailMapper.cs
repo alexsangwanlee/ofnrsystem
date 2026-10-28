@@ -35,8 +35,9 @@ public static partial class MailMapper
         foreach (var t in m.BodyParts.OfType<TextPart>())
             if (!t.TryDetectEncoding(out _, out _) && !IsUtf8(t)) t.ContentType.CharsetEncoding = Encoding.GetEncoding(949);
         var from = m.From.Mailboxes.FirstOrDefault();
-        string[] references = [.. m.References];
-        var subject = m.Subject ?? "";
+        string[] references = [.. m.References.Select(r => Clean(r)!)];
+        var subject = Clean(m.Subject) ?? "";
+        var (messageId, inReplyTo) = (Clean(m.MessageId), Clean(m.InReplyTo));
         using var html = m.HtmlBody is { } raw && raw.Count(c => c == '<') <= MaxHtmlTags ? Sanitize(raw) : null;
         return new MailMessage
         {
@@ -44,23 +45,26 @@ public static partial class MailMapper
             UidValidity = uidValidity,
             Uid = uid,
             Outgoing = outgoing,
-            MessageId = m.MessageId,
-            InReplyTo = m.InReplyTo,
+            MessageId = messageId,
+            InReplyTo = inReplyTo,
             References = references,
-            ThreadKey = references.FirstOrDefault() ?? m.InReplyTo ?? m.MessageId ?? "subj:" + ReplyPrefixes().Replace(subject, "").Trim(),
-            FromName = from?.Name ?? "",
-            FromAddress = from?.Address ?? "",
-            To = m.To.ToString(),
-            Cc = m.Cc.Count > 0 ? m.Cc.ToString() : null,
+            ThreadKey = references.FirstOrDefault() ?? inReplyTo ?? messageId ?? "subj:" + ReplyPrefixes().Replace(subject, "").Trim(),
+            FromName = Clean(from?.Name) ?? "",
+            FromAddress = Clean(from?.Address) ?? "",
+            To = Clean(m.To.ToString())!,
+            Cc = m.Cc.Count > 0 ? Clean(m.Cc.ToString()) : null,
             Subject = subject,
             // Without a Date header MimeKit gives MinValue, which would sort the mail below every other.
             ReceivedAt = m.Date == DateTimeOffset.MinValue ? DateTimeOffset.UtcNow : m.Date,
             // HTML-only mail (common from Korean webmail) still needs text for search, triage and prompts.
-            TextBody = m.TextBody ?? (html?.Body is { } body ? Text(body) : null),
-            HtmlBody = html?.Body?.InnerHtml,
-            Attachments = [.. Attachments(m).Select((a, i) => new MailAttachment { Index = i, FileName = FileName(a), Size = Size(a) })],
+            TextBody = Clean(m.TextBody ?? (html?.Body is { } body ? Text(body) : null)),
+            HtmlBody = Clean(html?.Body?.InnerHtml),
+            Attachments = [.. Attachments(m).Select((a, i) => new MailAttachment { Index = i, FileName = Clean(FileName(a))!, Size = Size(a) })],
         };
     }
+
+    // PostgreSQL text and jsonb reject U+0000: one such mail would fail its chunk on every sync and stop mail for good.
+    static string? Clean(string? s) => s?.Replace("\0", "");
 
     /// <summary>The job number in the subject or body first, then a sender domain that only one project's client uses.</summary>
     public static Guid? MatchProject(MailMessage mail, IEnumerable<(Guid id, string jobNo, string[] domains)> projects)

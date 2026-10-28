@@ -40,6 +40,32 @@ public sealed class MailMapperTests
     }
 
     [Fact]
+    public void Nul_characters_are_dropped_before_postgres_sees_them()
+    {
+        var m = Map(MimeMessage.Load(new MemoryStream(Encoding.ASCII.GetBytes("""
+            From: =?utf-8?Q?=EA=B9=80=00?= <kim@tnf.co.kr>
+            Subject: =?utf-8?Q?hi=00x?=
+            Content-Type: multipart/mixed; boundary="b"
+
+            --b
+            Content-Type: text/plain; charset=utf-8
+            Content-Transfer-Encoding: base64
+
+            6rKs7KCBAOyalOyyrQ==
+            --b
+            Content-Type: application/pdf
+            Content-Disposition: attachment; filename*=utf-8''a%00b.pdf
+
+            %PDF
+            --b--
+            """)), TestContext.Current.CancellationToken));
+
+        Assert.Equal(("hix", "견적요청", "김"), (m.Subject, m.TextBody!.Trim(), m.FromName));
+        Assert.Equal("ab.pdf", Assert.Single(m.Attachments).FileName);
+        Assert.Equal("subj:hix", m.ThreadKey);
+    }
+
+    [Fact]
     public void Raw_8bit_korean_headers_and_charsetless_body_decode()
     {
         // Legacy Korean mailers send CP949 bytes without RFC 2047 encoding or a charset parameter.
