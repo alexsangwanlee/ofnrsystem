@@ -40,6 +40,9 @@ public interface IMailSync
 
 public sealed class MailSync(IServiceScopeFactory scopes, SettingsStore settings, IOpsNotifier notifier, MailTriage triage, ILogger<MailSync> logger) : BackgroundService, IMailSync
 {
+    internal const string LoginFailed =
+        "메일 로그인에 실패했습니다. NAVER WORKS 보안 > 외부 앱 비밀번호에서 만든 비밀번호인지(평소 로그인 비밀번호가 아님), 관리자 화면에서 IMAP/SMTP 사용이 허용되었는지 확인해 주세요.";
+
     internal const string NotConfigured = "메일 계정이 설정되지 않았습니다. 설정에서 메일 주소와 앱 비밀번호를 입력해 주세요.";
     const int Batch = 50;
 
@@ -184,7 +187,8 @@ public sealed class MailKitImapSource(SettingsStore settings, SecretStore secret
         var a = settings.Current.Mail;
         var password = secrets.Load("mail") ?? throw new MailException("메일 비밀번호가 설정되지 않았습니다.");
         if (!client.IsConnected) await client.ConnectAsync(a.ImapHost, a.ImapPort, a.ImapPort == 993 ? SecureSocketOptions.SslOnConnect : SecureSocketOptions.StartTls);
-        await client.AuthenticateAsync(a.Address, password);
+        try { await client.AuthenticateAsync(a.Address, password); }
+        catch (AuthenticationException e) { throw new MailException(MailSync.LoginFailed, e); }
         return client;
     }
 

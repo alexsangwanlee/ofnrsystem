@@ -1,6 +1,8 @@
 using MailKit.Net.Smtp;
 using MailKit.Security;
+using Microsoft.EntityFrameworkCore;
 using MimeKit;
+using MimeKit.Utils;
 using Ofnr.Server.Data;
 using Ofnr.Server.Projects;
 using Ofnr.Server.Realtime;
@@ -22,9 +24,12 @@ public sealed class MailKitSmtp(SettingsStore settings, SecretStore secrets) : I
         var password = secrets.Load("mail") ?? throw new MailException("메일 비밀번호가 설정되지 않았습니다.");
         using var client = new SmtpClient();
         await client.ConnectAsync(a.SmtpHost, a.SmtpPort, a.SmtpPort == 465 ? SecureSocketOptions.SslOnConnect : SecureSocketOptions.StartTls);
-        await client.AuthenticateAsync(a.Address, password);
+        try { await client.AuthenticateAsync(a.Address, password); }
+        catch (AuthenticationException e) { throw new MailException(MailSync.LoginFailed, e); }
         await client.SendAsync(m);
-        await client.DisconnectAsync(true);
+        // The mail is out; a failed QUIT must not report a failed send, which a retry would turn into a second mail.
+        try { await client.DisconnectAsync(true); }
+        catch (Exception) { }
     }
 }
 
@@ -39,9 +44,12 @@ public sealed class MailSender(OfnrDb db, SettingsStore settings, ISmtpTransport
         var m = new MimeMessage { Subject = d.Subject };
         try
         {
-            m.From.Add(MailboxAddress.Parse(o.Mail.Address));
-            m.To.AddRange(InternetAddressList.Parse(d.To));
-            if (!string.IsNullOrWhiteSpace(d.Cc)) m.Cc.AddRange(InternetAddressList.Parse(d.Cc));
+            var from = MailboxAddress.Parse(o.Mail.Address);
+            m.From.Add(from);
+            m.MessageId = MimeUtils.GenerateMessageId(from.Domain); // not the PC's host name
+            // Outlook and NAVER WORKS separate recipients with ';', which MimeKit does not.
+            m.To.AddRange(InternetAddressList.Parse(d.To.Replace(';', ',')));
+            if (!string.IsNullOrWhiteSpace(d.Cc)) m.Cc.AddRange(InternetAddressList.Parse(d.Cc.Replace(';', ',')));
         }
         catch (ParseException) { throw new MailException("메일 주소를 확인해 주세요."); }
         var replied = d.ReplyToMailId is { } id ? await db.MailMessages.FindAsync(id) : null;
@@ -57,7 +65,16 @@ public sealed class MailSender(OfnrDb db, SettingsStore settings, ISmtpTransport
             if (!Path.IsPathFullyQualified(path) || !ProjectEndpoints.IsUnder(Path.GetFullPath(path), o.ProjectsRoot))
                 throw new MailException($"프로젝트 폴더 안의 파일만 첨부할 수 있습니다: {path}");
             if (!File.Exists(path)) throw new MailException($"첨부 파일을 찾을 수 없습니다: {path}");
-            await body.Attachments.AddAsync(path);
+            MimeEntity part;
+            try
+            {
+                // Office keeps an open file locked for writing; sharing it sends the last saved version.
+                await using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+                part = await body.Attachments.AddAsync(Path.GetFileName(path), file);
+            }
+            catch (IOException) { throw new MailException($"첨부 파일을 열지 못했습니다. 파일을 연 프로그램을 닫고 다시 보내 주세요: {path}"); }
+            // Older Outlook shows RFC 2231 names, MimeKit's default, as ATT00001; RFC 2047 reads everywhere.
+            foreach (var p in part.ContentType.Parameters.Concat(part.ContentDisposition?.Parameters ?? [])) p.EncodingMethod = ParameterEncodingMethod.Rfc2047;
         }
         m.Body = body.ToMessageBody();
 
@@ -76,6 +93,9 @@ public sealed class MailSender(OfnrDb db, SettingsStore settings, ISmtpTransport
         var now = DateTimeOffset.UtcNow;
         (d.Status, d.SentAt, d.UpdatedAt) = ("sent", now, now);
         if (replied is not null) replied.Status = MailStatus.Done;
+        // Older drafts of this reply (an AI rerun, an early save) would keep 초안 있음 and load again into 답장 쓰기.
+        if (d.ReplyToMailId is { } replyTo)
+            db.MailDrafts.RemoveRange(await db.MailDrafts.Where(x => x.ReplyToMailId == replyTo && x.Id != d.Id && x.Status == "draft").ToListAsync());
         db.Activities.Add(new Activity { ProjectId = d.ProjectId ?? replied?.ProjectId, Kind = "mail", Text = $"메일을 보냈습니다: {d.Subject}" });
         await db.SaveChangesAsync();
         if (replied is not null) await notifier.MailUpdated(await MailEndpoints.SummaryAsync(db, replied.Id));

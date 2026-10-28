@@ -217,6 +217,33 @@ public sealed class MailApiTests
     }
 
     [Fact]
+    public async Task Send_takes_semicolons_closes_older_drafts_and_names_korean_files_for_old_outlook()
+    {
+        await using var h = Host();
+        Settings(h).Mail.Address = "ceo@ofnr.kr";
+        var p = await h.Project();
+        var file = Path.Combine(p.Folder, "01_PLAN", "견적서 최종.pdf");
+        File.WriteAllText(file, "견적");
+        var mail = await AddMail(h, "견적 요청", edit: m => m.ProjectId = p.Id);
+        object Draft(string to) => new { replyToMailId = mail.Id, to, subject = "RE: 견적 요청", body = "보내 드립니다.", attachments = new[] { file } };
+        await h.Send(HttpMethod.Post, "/api/mail/drafts", Draft("kim@tnf.co.kr"));
+        var newer = (await h.Send(HttpMethod.Post, "/api/mail/drafts", Draft("kim@tnf.co.kr; pm@tnf.co.kr;"))).GetProperty("id").GetGuid();
+
+        // Office holds an open file; a lock nobody shares is reported, not a 500.
+        using (File.Open(file, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+            Assert.Contains(file, Error(await h.Send(HttpMethod.Post, $"/api/mail/drafts/{newer}/send", expected: HttpStatusCode.BadRequest)));
+        await h.Send(HttpMethod.Post, $"/api/mail/drafts/{newer}/send");
+
+        var m = Assert.Single(smtp.Sent);
+        Assert.Equal(["kim@tnf.co.kr", "pm@tnf.co.kr"], m.To.Mailboxes.Select(x => x.Address));
+        Assert.EndsWith("@ofnr.kr", m.MessageId);
+        Assert.Contains("filename=\"=?utf-8?", m.ToString());
+        Assert.Equal("견적서 최종.pdf", Assert.Single(m.Attachments).ContentDisposition?.FileName);
+        Assert.Equal(newer, (await h.Send(HttpMethod.Get, $"/api/mail/drafts?mailId={mail.Id}")).EnumerateArray().Single().GetProperty("id").GetGuid());
+        Assert.False((await h.Send(HttpMethod.Get, $"/api/mail/{mail.Id}")).GetProperty("hasDraft").GetBoolean());
+    }
+
+    [Fact]
     public async Task Send_rejects_attachment_outside_projects_root()
     {
         await using var h = Host();
