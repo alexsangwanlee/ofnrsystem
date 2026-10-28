@@ -41,6 +41,42 @@ public sealed class BootstrapTests
     }
 
     [Fact]
+    public void An_update_brings_new_shipped_files_and_keeps_what_was_changed()
+    {
+        var o = Options();
+        string Shipped(string rel) => Path.Combine(Content, "claude-plugin", rel);
+        string Data(string rel) => Path.Combine(o.PluginDir, rel);
+        Directory.CreateDirectory(Path.Combine(Content, "config"));
+        Directory.CreateDirectory(Path.GetDirectoryName(Shipped("skills/brief/SKILL.md"))!);
+        void Release(int n)
+        {
+            File.WriteAllText(Shipped("skills/quote/SKILL.md"), $"---\nname: quote\n---\n본문 {n}\n\n## 학습된 규칙\n");
+            File.WriteAllText(Shipped("skills/brief/SKILL.md"), $"본문 {n}\n\n## 학습된 규칙\n");
+            File.WriteAllText(Shipped("README.md"), $"readme {n}");
+            File.WriteAllText(Path.Combine(Content, "config", "recipes.json"), $"[{n}]");
+        }
+        Release(1);
+        Bootstrap.EnsureDataRoot(o, Content);
+        File.AppendAllText(Data("skills/quote/SKILL.md"), "- 부가세 별도\n"); // a learning job
+        File.WriteAllText(Data("skills/brief/SKILL.md"), "대표가 고친 본문\n\n## 학습된 규칙\n"); // the Skills editor
+
+        Release(2);
+        Bootstrap.EnsureDataRoot(o, Content);
+
+        Assert.Equal("---\nname: quote\n---\n본문 2\n\n## 학습된 규칙\n- 부가세 별도\n", File.ReadAllText(Data("skills/quote/SKILL.md")));
+        Assert.Equal("대표가 고친 본문\n\n## 학습된 규칙\n", File.ReadAllText(Data("skills/brief/SKILL.md")));
+        Assert.Equal("readme 2", File.ReadAllText(Data("README.md")));
+        Assert.Equal("[2]", File.ReadAllText(Path.Combine(o.DataRoot, "recipes.json")));
+        Assert.StartsWith("앱 업데이트로 받은 기본 스킬\n", Git(o.PluginDir, "log", "--format=%s"));
+
+        File.WriteAllText(Path.Combine(o.DataRoot, "recipes.json"), "[대표]");
+        Release(3);
+        Bootstrap.EnsureDataRoot(o, Content);
+        Assert.Equal("[대표]", File.ReadAllText(Path.Combine(o.DataRoot, "recipes.json")));
+        Assert.Equal("readme 3", File.ReadAllText(Data("README.md")));
+    }
+
+    [Fact]
     public void EnsureDataRoot_retries_first_commit_despite_gpgsign_and_failing_hook()
     {
         var o = Options();

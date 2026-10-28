@@ -39,7 +39,7 @@ scripts/                setup.ps1(대표 PC 준비), publish-sidecar.ps1, dev.sh
 - 업데이트: `check()`, `download()`, `invoke("stop_backend")`, `install()` 순서. 실행 중인 작업이 있으면 설정 화면이 업데이트를 막는다.
 - 창을 닫으면 숨기기만 한다. 트레이의 종료로 끝내면 사이드카도 같이 끝난다(작업 개체라 claude, codex 자식까지). 그래서 `POST /api/open`은 파일과 폴더를 `explorer.exe`에 넘긴다. 서버가 직접 ShellExecute로 열면 Excel이나 Illustrator가 작업 개체 안에서 떠서 종료나 업데이트 때 저장하지 않은 채 꺼진다.
 
-데이터: `C:\OFNR` (Windows), `~/.ofnr` (그 밖), 환경 변수 `OFNR_DATA`로 바꾼다. `settings.json`, `secrets\*.bin`(DPAPI), `mcp.json`, `recipes.json`, `claude-plugin\`(git 기록), `jobs\`, `templates\`, `backups\`, `tools\`(MCP 서버).
+데이터: `C:\OFNR` (Windows), `~/.ofnr` (그 밖), 환경 변수 `OFNR_DATA`로 바꾼다. `settings.json`, `secrets\*.bin`(DPAPI), `mcp.json`, `recipes.json`, `claude-plugin\`(git 기록), `jobs\`, `templates\`, `backups\`, `tools\`(MCP 서버), `.shipped\`(지금 버전이 배포한 recipes.json과 claude-plugin, 업데이트 때 비교용).
 
 ## 명령
 
@@ -81,14 +81,14 @@ Linux 개발 PC에서 .NET은 `export PATH=$HOME/.dotnet:$PATH`가 필요할 수
 
 1. `config/recipes.json`에 항목을 더한다. 필드: `id`, `name`(한국어), `stage`, `skills`, `mcpServers`, `lock`(`office`, `sketchup`, `illustrator`, `photoshop`), `engines`(`claude`, `codex`), `docCode`, `outputDir`, `timeoutMinutes`, `maxBudgetUsd`, `needsProject`, `prompt`.
 2. 쓰는 스킬 폴더가 `claude-plugin/skills/`에 있어야 한다. `tests/Ofnr.Server.Tests/RecipeTests.cs`를 함께 고친다.
-3. 서버는 첫 실행 때만 `config/recipes.json`을 `<data>\recipes.json`으로 복사한다. 이미 설치된 PC에는 `<data>\recipes.json`을 직접 고치거나 그 파일을 지우고 서버를 다시 띄운다.
+3. 서버는 시작할 때 `config/recipes.json`을 `<data>\recipes.json`으로 가져온다. 파일이 없거나 지난 버전이 배포한 그대로(`<data>\.shipped\`와 같으면)일 때만 바꾸고, 대표가 고친 파일은 그대로 둔다.
 4. Codex를 허용하려면 대표 PC에서 그 레시피가 Codex로 도는지 엔진 점검으로 확인한 뒤 `engines`에 `codex`를 더한다.
 
 ### 스킬
 
 1. `claude-plugin/skills/<이름>/SKILL.md`를 만든다. 이름은 `^[a-z0-9-]+$`. 앞머리(frontmatter)에 폴더 이름과 같은 `name`, 그리고 `description`이 있어야 한다.
 2. 본문 끝에 `## 학습된 규칙` 칸을 비워 둔다. 확인되지 않은 단가나 규칙을 지어 넣지 않는다. 회사 지식은 `claude-plugin/knowledge/`에서 참조한다.
-3. 새 스킬 폴더는 다음 서버 시작 때 `<data>\claude-plugin`에 복사된다. 이미 있는 파일은 덮어쓰지 않는다(대표가 학습시킨 규칙을 지키기 위해).
+3. 스킬과 회사 지식은 다음 서버 시작 때 `<data>\claude-plugin`으로 들어간다. 새 파일은 복사하고, 지난 버전이 배포한 그대로인 파일은 새것으로 바꾼다. 학습된 규칙만 바뀐 SKILL.md는 `## 학습된 규칙` 위의 본문만 바꾸고 규칙은 지킨다. 대표가 본문을 고친 파일은 그대로 둔다. 바뀐 내용은 플러그인 git에 커밋한다.
 
 ### API 엔드포인트
 
