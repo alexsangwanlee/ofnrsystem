@@ -174,6 +174,30 @@ export function LinkProjectMenu({ mail, onLinked }: { mail: MailSummaryDto; onLi
   );
 }
 
+/** Closes a mail that needs nothing more (an ad, a reply sent by phone), or opens it again. */
+export function MailDoneButton({ mail, onChanged }: { mail: MailSummaryDto; onChanged: (m: MailSummaryDto) => void }) {
+  const ui = useUi();
+  const { busy, error, run } = useAction();
+  const done = mail.status === "Done";
+  const set = () =>
+    void run(async () =>
+      onChanged(
+        await api<MailSummaryDto>(`/api/mail/${mail.id}/status`, {
+          method: "POST",
+          body: JSON.stringify({ status: done ? "NeedsReply" : "Done" }),
+        }),
+      ),
+    );
+  return (
+    <>
+      <Button size="small" disabled={busy} onClick={set}>
+        {done ? "답장 필요로 되돌리기" : "처리 완료"}
+      </Button>
+      {error && <Caption1 className={ui.error}>{error}</Caption1>}
+    </>
+  );
+}
+
 export function Mail() {
   const s = useStyles();
   const ui = useUi();
@@ -477,6 +501,7 @@ function MailReader({
                 <Button size="small" onClick={() => setJobOpen(true)}>
                   작업 맡기기
                 </Button>
+                <MailDoneButton mail={m} onChanged={changed} />
               </div>
               <Section title="요약">
                 <Body1>{m.summary ?? "아직 AI가 정리하지 않은 메일입니다."}</Body1>

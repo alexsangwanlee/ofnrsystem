@@ -536,6 +536,36 @@ describe("pages", () => {
     expect(calls.some((c) => c.path.includes("status="))).toBe(false);
   });
 
+  it("Mail_done_closes_the_mail_from_the_reader_and_from_today", async () => {
+    const unlinked = { ...mail, projectId: null, jobNo: null, status: "New" as const };
+    const closed = { ...unlinked, status: "Done" as const };
+    let listed: MailSummaryDto[] = [unlinked];
+    const calls = mockApi({
+      ...mailRoutes,
+      "GET /api/mail": () => listed,
+      "GET /api/mail/m1": () => ({ ...mailDetail, ...listed[0] }),
+      "POST /api/mail/m1/status": () => ((listed = [closed]), closed),
+    });
+    renderAt(<Mail />, "/mail/m1", "/mail/:id");
+    fireEvent.click(await screen.findByRole("tab", { name: "미분류" }));
+    await screen.findByRole("button", { name: /성수 팝업 견적 요청드립니다/ });
+
+    fireEvent.click(await screen.findByRole("button", { name: "처리 완료" }));
+    expect(await screen.findByRole("button", { name: "답장 필요로 되돌리기" })).toBeTruthy();
+    expect(calls.find((c) => c.path === "/api/mail/m1/status")?.body).toEqual({ status: "Done" });
+    expect(screen.queryByRole("list", { name: "메일 목록" })).toBeNull();
+
+    cleanup();
+    listed = [unlinked];
+    mockApi({
+      "GET /api/today": () => ({ counts: { attention: 0, running: 0, thisWeek: 0 }, attention: [], unsortedMail: listed.filter((m) => m.status !== "Done"), upcoming: [], running: [] }),
+      "POST /api/mail/m1/status": () => ((listed = [closed]), closed),
+    });
+    renderAt(<Today />);
+    fireEvent.click(await screen.findByRole("button", { name: "처리 완료" }));
+    expect(await screen.findByText("미분류 메일이 없습니다")).toBeTruthy();
+  });
+
   it("Board_create_after_projectUpdated_shows_one_card", async () => {
     const created: ProjectDto = { ...project, id: "p2", name: "새 팝업", stage: "Inquiry", clientId: null, clientName: null };
     mockApi({

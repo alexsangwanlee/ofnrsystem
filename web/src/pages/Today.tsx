@@ -7,7 +7,7 @@ import { Async, Kpi, Page, RouterLink, Section, useApi, useFlash, useUi } from "
 import { DATE_KINDS, dday, formatDate } from "../format";
 import { joinJob, leaveJob, useOps } from "../realtime";
 import type { TodayDto } from "../types";
-import { LinkProjectMenu } from "./Mail";
+import { LinkProjectMenu, MailDoneButton } from "./Mail";
 
 const useStyles = makeStyles({
   grid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(380px, 1fr))", gap: tokens.spacingHorizontalXL, alignItems: "start" },
@@ -104,6 +104,7 @@ export function Today() {
                             </Caption1>
                           </div>
                           <LinkProjectMenu mail={m} onLinked={today.reload} />
+                          <MailDoneButton mail={m} onChanged={today.reload} />
                         </li>
                       ))}
                     </ul>
