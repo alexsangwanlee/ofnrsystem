@@ -213,7 +213,7 @@ public sealed class JobQueue(IServiceScopeFactory scopes, SettingsStore settings
                     await runner.BlockAsync(j.Id, $"프로젝트 폴더에 AI 설정 파일이 있어 실행을 멈췄습니다. 확인 후 지워 주세요: {string.Join(", ", config)}");
                 else if (lockName is not null && await AppReadiness.CheckAsync(lockName, stopping) is { } notReady)
                 {
-                    await runner.BlockAsync(j.Id, notReady);
+                    await runner.BlockAsync(j.Id, $"{notReady} 준비되면 {RetryFor.TotalMinutes:0}분 동안 {RetryEvery.TotalMinutes:0}분마다 자동으로 다시 시작합니다.");
                     retries[j.Id] = new(lockName, now + RetryEvery, now + RetryFor);
                 }
                 else Start(j.Id, j.Instruction, lockName, j.Engine, stopping);

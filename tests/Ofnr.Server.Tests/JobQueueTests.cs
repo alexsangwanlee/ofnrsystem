@@ -79,7 +79,7 @@ public sealed class JobQueueTests
     public async Task Sketchup_not_ready_sets_needs_attention_with_message()
     {
         Assert.SkipWhen(await PortOpen(9876), "SketchUp MCP is listening on this PC.");
-        const string message = "SketchUp을 열고 MCP Server를 Start 해 주세요.";
+        const string message = "SketchUp을 열고 MCP Server를 Start 해 주세요. 준비되면 30분 동안 2분마다 자동으로 다시 시작합니다.";
         await using var h = new JobHost();
         var p = await h.Project();
         var id = await h.Job("model3d", p.Id, "부스 모델링");

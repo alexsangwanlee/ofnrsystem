@@ -132,6 +132,21 @@ public sealed class HealthTests
     }
 
     [Fact]
+    public async Task Failed_engine_check_is_reported_and_leaves_no_failed_job()
+    {
+        await using var h = new JobHost();
+        h.Agents.Script = (_, _) => throw new InvalidOperationException("Not logged in");
+
+        var failed = await h.Send(HttpMethod.Post, "/api/health/engine-check/claude");
+
+        Assert.False(failed.GetProperty("ok").GetBoolean());
+        Assert.StartsWith("엔진 점검이 실패했습니다: ", failed.GetProperty("detail").GetString());
+        await using var db = h.Db();
+        Assert.Equal(JobStatus.Done, (await db.Jobs.SingleAsync(Ct)).Status);
+        Assert.Empty((await h.Send(HttpMethod.Get, "/api/today")).GetProperty("attention").EnumerateArray());
+    }
+
+    [Fact]
     public async Task Engine_check_that_does_not_end_in_time_fails_and_cancels_its_job()
     {
         await using var h = new JobHost();

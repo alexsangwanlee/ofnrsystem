@@ -254,7 +254,7 @@ describe("pages", () => {
     expect(screen.getByRole("group", { name: "확인 필요" }).textContent).toContain("3");
     expect(screen.getByRole("group", { name: "실행 중" }).textContent).toContain("1");
     expect(screen.getByRole("group", { name: "7일 안 일정" }).textContent).toContain("2");
-    for (const name of ["승인", "수정 후 승인", "답변", "무시", "결과 보기", "다시 보기", "프로젝트 연결"]) {
+    for (const name of ["승인", "수정 후 승인", "답변", "무시", "결과 보기", "작업 보기", "프로젝트 연결"]) {
       expect(screen.getByRole("button", { name }), name).toBeTruthy();
     }
     expect(screen.getByText("성수 팝업 견적 요청드립니다")).toBeTruthy();
@@ -423,6 +423,24 @@ describe("pages", () => {
     expect((screen.getByRole("textbox", { name: "검토 의견" }) as HTMLTextAreaElement).value).toBe("");
     expect((screen.getByLabelText(/스킬에 반영/) as HTMLSelectElement).value).toBe("");
     expect(screen.queryByRole("textbox", { name: "후속 지시" })).toBeNull();
+  });
+
+  it("JobDetail_failed_job_reruns_or_closes_in_one_click", async () => {
+    const failed: JobDetailDto = { job: job({ status: "Failed" }), runs: [], events: [], approvals: [], artifacts: [], feedback: [], result: null };
+    const calls = mockApi({
+      "GET /api/jobs/j1": failed,
+      "GET /api/projects/p1": { project, mails: [], jobs: [], artifacts: [], activity: [] },
+      "GET /api/recipes": [],
+      "POST /api/jobs/j1/followup": failed.job,
+      "POST /api/jobs/j1/complete": failed.job,
+    });
+    renderAt(<JobDetail />, "/jobs/j1", "/jobs/:id");
+
+    fireEvent.click(await screen.findByRole("button", { name: "다시 실행" }));
+    await waitFor(() => expect(calls).toContainEqual({ method: "POST", path: "/api/jobs/j1/followup", body: { instruction: "이어서 진행해 주세요." } }));
+    await waitFor(() => expect((screen.getByRole("button", { name: "닫기" }) as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByRole("button", { name: "닫기" }));
+    await waitFor(() => expect(calls.some((c) => c.method === "POST" && c.path === "/api/jobs/j1/complete")).toBe(true));
   });
 
   it("Mail_send_requires_confirmation", async () => {

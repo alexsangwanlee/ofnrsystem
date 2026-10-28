@@ -45,14 +45,14 @@ public static class OpsEndpoints
                 }
                 await Task.Delay(500, ct);
             }
+            // A finished check is no result to review, and a failed one no card on 오늘: the health row keeps the outcome.
+            await db.Jobs.Where(j => j.Id == job.Id).ExecuteUpdateAsync(s => s.SetProperty(j => j.Status, JobStatus.Done).SetProperty(j => j.UpdatedAt, DateTimeOffset.UtcNow), ct);
+            await ops.JobUpdated(await JobEndpoints.DtoAsync(db, recipes, job.Id));
             if (status != JobStatus.Review)
             {
                 var error = await db.JobRuns.Where(r => r.JobId == job.Id).OrderByDescending(r => r.Seq).Select(r => r.Error).FirstOrDefaultAsync(ct);
                 return Results.Ok(await health.RecordCheckAsync(engine, false, $"엔진 점검이 실패했습니다: {error ?? "작업 기록을 확인해 주세요."}"));
             }
-            // A finished check is no result to review.
-            await db.Jobs.Where(j => j.Id == job.Id).ExecuteUpdateAsync(s => s.SetProperty(j => j.Status, JobStatus.Done).SetProperty(j => j.UpdatedAt, DateTimeOffset.UtcNow), ct);
-            await ops.JobUpdated(await JobEndpoints.DtoAsync(db, recipes, job.Id));
             // The engine called the tool and the call reached this server: its own text can echo the line, and Codex can start a call it then cancels.
             var reported = await db.JobEvents.AnyAsync(e => e.JobId == job.Id && e.Kind == "tool" && e.Summary.StartsWith(CheckTool), ct)
                 && await db.JobEvents.AnyAsync(e => e.JobId == job.Id && e.Raw == OfnrTools.ReportProgressRaw && e.Summary == CheckMessage, ct);

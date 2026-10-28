@@ -118,6 +118,24 @@ public sealed class JobApiTests
     }
 
     [Fact]
+    public async Task Closing_a_failed_job_keeps_its_files_as_drafts()
+    {
+        await using var h = new JobHost();
+        var p = await h.Project();
+        h.Agents.Script = (call, ct) =>
+        {
+            File.WriteAllText(Path.Combine(p.Folder, "01_PLAN", $"{p.JobNo}_BRIEF_v01.md"), "# 요구사항");
+            throw new InvalidOperationException("예산 한도를 넘었습니다");
+        };
+        var id = await h.Job("brief", p.Id);
+        await h.WaitForStatus(id, JobStatus.Failed);
+
+        Assert.Equal("Done", (await h.Send(HttpMethod.Post, $"/api/jobs/{id}/complete")).GetProperty("status").GetString());
+        await using var db = h.Db();
+        Assert.Equal(ArtifactStatus.Draft, (await db.Artifacts.SingleAsync(a => a.JobId == id, Ct)).Status);
+    }
+
+    [Fact]
     public async Task Server_keeps_running_when_the_database_is_unreachable()
     {
         await using var host = new TestHost();

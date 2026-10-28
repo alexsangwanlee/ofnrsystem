@@ -64,7 +64,7 @@ function JobView({ id }: { id: string }) {
     if (!feedback.trim()) return setFeedbackMissing(true);
     if (await post("feedback", { text: feedback.trim(), skillName: skill || null })) {
       setFeedback("");
-      setNote(skill ? `검토 의견을 보냈습니다. ${skill} 스킬 학습 작업을 시작합니다.` : "검토 의견을 보냈습니다.");
+      setNote(skill ? `검토 의견을 기록했습니다. ${skill} 스킬 학습 작업을 시작합니다.` : "검토 의견을 기록했습니다.");
     }
   };
 
@@ -74,6 +74,8 @@ function JobView({ id }: { id: string }) {
         const folder = project.data?.project.folderPath;
         const pending = approvals.filter((a) => a.status === "Pending");
         const live = job.status === "Queued" || job.status === "Running";
+        // A failed job, or one held for an app or a restart, resumes with a plain follow-up that re-checks at once.
+        const retry = job.status === "Failed" || (job.status === "NeedsAttention" && pending.length === 0);
         return (
           <Page
             title={job.title}
@@ -99,6 +101,11 @@ function JobView({ id }: { id: string }) {
                 {!live && (
                   <Button onClick={() => setFollowup(followup ?? "")}>후속 지시</Button>
                 )}
+                {retry && (
+                  <Button disabled={action.busy} onClick={() => void post("followup", { instruction: "이어서 진행해 주세요." })}>
+                    다시 실행
+                  </Button>
+                )}
                 {(live || job.status === "NeedsAttention") && (
                   <Button icon={<Stop20Regular />} onClick={() => setStopping(true)}>
                     중지
@@ -107,6 +114,11 @@ function JobView({ id }: { id: string }) {
                 {job.status === "Review" && (
                   <Button appearance="primary" icon={<Checkmark20Regular />} disabled={action.busy} onClick={() => void post("complete")}>
                     완료
+                  </Button>
+                )}
+                {job.status === "Failed" && (
+                  <Button disabled={action.busy} onClick={() => void post("complete")}>
+                    닫기
                   </Button>
                 )}
               </>
@@ -172,6 +184,7 @@ function JobView({ id }: { id: string }) {
                 <div className={s.feedback}>
                   <Field
                     label="검토 의견"
+                    hint="기록으로 남고, 스킬을 고르면 그 스킬의 규칙으로 학습합니다. 결과물을 고치게 하려면 후속 지시를 쓰세요."
                     validationMessage={feedbackMissing ? "검토 의견을 입력해 주세요." : undefined}
                   >
                     <Textarea

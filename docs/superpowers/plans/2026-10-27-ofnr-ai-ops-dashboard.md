@@ -130,7 +130,7 @@ All bodies are JSON, camelCase. Ids are GUID strings. Dates ISO-8601. Money is i
 | GET `/api/jobs/{id}` | | `JobDetailDto { job, runs: RunDto[], events: JobEventDto[], approvals: ApprovalDto[], artifacts: ArtifactDto[], feedback: FeedbackDto[], result?: JobResultDto }` |
 | POST `/api/jobs/{id}/cancel` | | `JobDto` |
 | POST `/api/jobs/{id}/followup` | `{ instruction }` | `JobDto` |
-| POST `/api/jobs/{id}/complete` | | `JobDto` (status Done) |
+| POST `/api/jobs/{id}/complete` | | `JobDto` (status Done; only a job in Review turns its draft artifacts InternalApproved) |
 | POST `/api/jobs/{id}/feedback` | `{ text, skillName? }` | `FeedbackDto` (queues a skill-learning job when `skillName` set) |
 | POST `/api/approvals/{id}/decide` | `{ decision: "accept"|"edit"|"respond"|"ignore", text? }` | `ApprovalDto` (answers an AI question; Task 6 starts the follow-up; `ignore` of the job's last open question after a finished run moves the job to `Review`) |
 | POST `/api/health/engine-check/{engine}` | | `EngineDto` |
@@ -370,7 +370,7 @@ SignalR hub `/hubs/ops`, server-to-client methods: `jobUpdated(JobDto)`, `jobEve
 **Interfaces:**
 - Consumes: Task 10 modules, API Contract.
 - Page content (spec section 7), Korean copy as written here:
-  - **오늘**: three counters (확인 필요, 실행 중, 이번 주 일정); 확인 필요 list of `ApprovalCard`s (buttons 승인, 수정 후 승인, 답변, 무시 for approvals; 결과 보기 for review; 다시 보기 for failed); 미분류 메일 list with 프로젝트 연결; 다가오는 일정 with D-day; 실행 중 작업 with the last event line.
+  - **오늘**: three counters (확인 필요, 실행 중, 이번 주 일정); 확인 필요 list of `ApprovalCard`s (buttons 승인, 수정 후 승인, 답변, 무시 for approvals; 결과 보기 for review; 작업 보기 for failed); 미분류 메일 list with 프로젝트 연결 and 처리 완료; 다가오는 일정 with D-day; 실행 중 작업 with the last event line.
   - **메일**: split pane: list (filters 전체, 미분류, 답장 필요, search) / reader (sandboxed `iframe srcdoc` with `sandbox=""` for HTML, text fallback) / AI panel (요약, 추출 정보, 추천 프로젝트 with confidence, buttons 프로젝트 연결, 새 프로젝트 만들기, 답장 쓰기, 작업 맡기기). Reply editor: to, cc, subject, body, attachments picker from project files, buttons 초안 저장 and 보내기 (confirmation dialog `이 메일을 보냅니다. 받는 사람: <to>`).
   - **프로젝트**: board with seven columns (six stages + 완료), cards show 거래처, 프로젝트명, D-day of nearest date, 계약액 or 견적액, badges for attention and running; drag or menu 단계 이동 calls stage API and shows suggestions as one-click 작업 맡기기 chips plus warnings; 새 프로젝트 button opens `ProjectForm`.
   - **프로젝트 상세**: header with job number, name, stage stepper; tabs 개요, 메일, 작업, 파일, 활동, 지침; 파일 tab uses `FileList` (group by top folder, version chip, status chip, 열기 and 폴더 열기 buttons calling `/api/open`).

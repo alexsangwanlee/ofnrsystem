@@ -15,7 +15,7 @@ const KIND_LABEL: Record<AttentionDto["kind"], string> = {
 const OPEN_LABEL: Record<AttentionDto["kind"], string> = {
   approval: "작업 보기",
   review: "결과 보기",
-  failed: "다시 보기",
+  failed: "작업 보기",
   blocked: "작업 보기",
   stopped: "작업 보기",
 };

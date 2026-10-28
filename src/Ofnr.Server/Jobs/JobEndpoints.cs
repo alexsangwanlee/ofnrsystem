@@ -85,10 +85,13 @@ public static class JobEndpoints
         {
             if (await db.Jobs.FindAsync(id) is not { } job) return JobNotFound();
             if (job.Status is JobStatus.Queued or JobStatus.Running) return Error(409, "실행 중인 작업은 완료할 수 없습니다.");
+            // Closing a failed job approves nothing: its half-written files stay drafts.
+            var reviewed = job.Status == JobStatus.Review;
             (job.Status, job.UpdatedAt) = (JobStatus.Done, DateTimeOffset.UtcNow);
             await db.SaveChangesAsync();
-            await db.Artifacts.Where(a => a.JobId == id && a.Status == ArtifactStatus.Draft)
-                .ExecuteUpdateAsync(s => s.SetProperty(a => a.Status, ArtifactStatus.InternalApproved));
+            if (reviewed)
+                await db.Artifacts.Where(a => a.JobId == id && a.Status == ArtifactStatus.Draft)
+                    .ExecuteUpdateAsync(s => s.SetProperty(a => a.Status, ArtifactStatus.InternalApproved));
             await Approvals.ExpirePendingAsync(db, id);
             var dto = await DtoAsync(db, recipes, id);
             await ops.JobUpdated(dto);
