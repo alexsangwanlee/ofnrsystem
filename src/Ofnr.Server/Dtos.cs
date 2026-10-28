@@ -87,7 +87,7 @@ public sealed record MailSummaryDto(
 public sealed record MailDetailDto(
     Guid Id, string FromName, string FromAddress, string Subject, DateTimeOffset ReceivedAt, MailStatus Status, string? Category, string? Summary,
     Guid? ProjectId, string? JobNo, Guid? SuggestedProjectId, double? SuggestedConfidence, bool HasAttachments, bool HasDraft,
-    string To, string? Cc, string? TextBody, string? HtmlBody, List<MailAttachment> Attachments, JsonElement Extracted, List<MailSummaryDto> Thread);
+    string To, string? Cc, string? ReplyTo, string? TextBody, string? HtmlBody, List<MailAttachment> Attachments, JsonElement Extracted, List<MailSummaryDto> Thread);
 
 public sealed record MailLinkInput(Guid? ProjectId);
 

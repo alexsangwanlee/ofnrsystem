@@ -98,7 +98,7 @@ public sealed class OfnrTools(OfnrDb db, Approvals approvals, IOpsNotifier notif
         var mail = job.MailId is { } mailId ? await db.MailMessages.AsNoTracking().SingleAsync(m => m.Id == mailId, ct) : null;
         var client = job.ProjectId is { } projectId ? await db.Projects.Where(p => p.Id == projectId).Select(p => p.Client).SingleOrDefaultAsync(ct) : null;
         HashSet<string> known = new(StringComparer.OrdinalIgnoreCase);
-        if (mail is not null) known.UnionWith(new[] { mail.FromAddress, mail.To, mail.Cc }.SelectMany(Addresses).Select(a => a.Address));
+        if (mail is not null) known.UnionWith(new[] { mail.FromAddress, mail.ReplyTo, mail.To, mail.Cc }.SelectMany(Addresses).Select(a => a.Address));
         if (client?.ContactEmail is { } contact) known.Add(contact.Trim());
         var dropped = new List<string>();
         string? Keep(string? list)
@@ -110,7 +110,7 @@ public sealed class OfnrTools(OfnrDb db, Approvals approvals, IOpsNotifier notif
         }
         var draft = new MailDraft
         {
-            ReplyToMailId = job.MailId, ProjectId = job.ProjectId, To = Keep(to) ?? (mail is { Outgoing: false } ? mail.FromAddress : ""), Cc = Keep(cc),
+            ReplyToMailId = job.MailId, ProjectId = job.ProjectId, To = Keep(to) ?? (mail is { Outgoing: false } ? mail.ReplyTo ?? mail.FromAddress : ""), Cc = Keep(cc),
             Subject = subject, Body = body, Author = "ai",
         };
         db.MailDrafts.Add(draft);

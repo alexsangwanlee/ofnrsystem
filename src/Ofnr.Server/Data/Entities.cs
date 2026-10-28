@@ -77,6 +77,8 @@ public sealed class MailMessage
     public string FromAddress { get; set; } = "";
     public string To { get; set; } = "";
     public string? Cc { get; set; }
+    /// <summary>Where a reply goes when set: web forms and notification relays send from a no-reply address.</summary>
+    public string? ReplyTo { get; set; }
     public string Subject { get; set; } = "";
     public DateTimeOffset ReceivedAt { get; set; }
     public string? TextBody { get; set; }

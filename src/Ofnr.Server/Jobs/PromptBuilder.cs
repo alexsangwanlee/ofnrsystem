@@ -73,9 +73,11 @@ public static class PromptBuilder
     {
         var body = mail.TextBody ?? "";
         if (body.Length > bodyLimit) body = body[..bodyLimit] + "\n(이하 생략)";
-        return new StringBuilder()
+        var sb = new StringBuilder()
             .AppendLine(withId ? $"<untrusted_mail id=\"{mail.Id}\">" : "<untrusted_mail>")
-            .AppendLine(Defang($"보낸 사람: {mail.FromName} <{mail.FromAddress}>"))
+            .AppendLine(Defang($"보낸 사람: {mail.FromName} <{mail.FromAddress}>"));
+        if (mail.ReplyTo is { } replyTo) sb.AppendLine(Defang($"회신 주소: {replyTo}"));
+        return sb
             .AppendLine($"받은 시각: {mail.ReceivedAt.ToLocalTime():yyyy-MM-dd HH:mm}")
             .AppendLine(Defang($"제목: {mail.Subject}")).AppendLine()
             .AppendLine(Defang(body))

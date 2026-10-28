@@ -53,6 +53,7 @@ public static partial class MailMapper
             FromAddress = Clean(from?.Address) ?? "",
             To = Clean(m.To.ToString())!,
             Cc = m.Cc.Count > 0 ? Clean(m.Cc.ToString()) : null,
+            ReplyTo = m.ReplyTo.Count > 0 ? Clean(m.ReplyTo.ToString()) : null,
             Subject = subject,
             // Without a Date header MimeKit gives MinValue, which would sort the mail below every other.
             ReceivedAt = m.Date == DateTimeOffset.MinValue ? DateTimeOffset.UtcNow : m.Date,

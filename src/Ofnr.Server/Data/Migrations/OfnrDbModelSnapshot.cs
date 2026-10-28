@@ -610,6 +610,10 @@ namespace Ofnr.Server.Data.Migrations
                         .HasColumnType("text[]")
                         .HasColumnName("references");
 
+                    b.Property<string>("ReplyTo")
+                        .HasColumnType("text")
+                        .HasColumnName("reply_to");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasColumnType("text")

@@ -155,6 +155,18 @@ public sealed class MailMapperTests
     }
 
     [Fact]
+    public void Reply_to_is_kept_and_absent_is_null()
+    {
+        var form = new MimeMessage { Subject = "홈페이지 문의" };
+        form.From.Add(MailboxAddress.Parse("noreply@forms.example"));
+        form.ReplyTo.Add(new MailboxAddress("박문의", "park@brand.example"));
+
+        Assert.Equal("\"박문의\" <park@brand.example>", Map(form).ReplyTo);
+        Assert.Equal("park@brand.example", InternetAddressList.Parse(Map(form).ReplyTo!).Mailboxes.Single().Address);
+        Assert.Null(Map(WithoutMessageId("견적")).ReplyTo);
+    }
+
+    [Fact]
     public void Thread_key_uses_references_root()
     {
         var m = Map(Load("reply.eml"));

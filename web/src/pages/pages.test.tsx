@@ -155,6 +155,7 @@ const mailDetail: MailDetailDto = {
   ...mail,
   to: "ceo@ofnr.co.kr",
   cc: null,
+  replyTo: null,
   textBody: "견적 부탁드립니다.",
   htmlBody: null,
   attachments: [],
@@ -525,6 +526,13 @@ describe("pages", () => {
 
     fireEvent.change(recipe, { target: { value: "free" } });
     expect((screen.getByRole("radio", { name: "Codex" }) as HTMLInputElement).checked).toBe(true);
+  });
+
+  it("Mail_reply_goes_to_the_reply_to_address", async () => {
+    mockApi({ ...mailRoutes, "GET /api/mail/m1": { ...mailDetail, fromAddress: "noreply@forms.example", replyTo: "park@brand.example" } });
+    renderAt(<Mail />, "/mail/m1", "/mail/:id");
+    fireEvent.click(await screen.findByRole("button", { name: "답장 쓰기" }));
+    expect(((await screen.findByLabelText(/받는 사람/)) as HTMLInputElement).value).toBe("park@brand.example");
   });
 
   it("Mail_send_confirm_cannot_send_twice", async () => {

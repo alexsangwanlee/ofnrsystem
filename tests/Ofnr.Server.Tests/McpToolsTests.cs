@@ -287,6 +287,28 @@ public sealed class McpToolsTests(TestHost host) : IClassFixture<TestHost>
     }
 
     [Fact]
+    public async Task Reply_draft_goes_to_the_reply_to_address_of_a_web_form_mail()
+    {
+        var s = await Seed();
+        using (var scope = host.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<OfnrDb>();
+            var m = await db.MailMessages.SingleAsync(m => m.Id == s.MailId, Ct);
+            (m.FromAddress, m.ReplyTo) = ("noreply@forms.example", "박문의 <park@brand.example>");
+            await db.SaveChangesAsync(Ct);
+        }
+        await using var client = await Connect(Tokens.Issue(s.JobId));
+
+        Assert.Contains("회신 주소: 박문의 <park@brand.example>", await Call(client, "get_mail_thread"));
+        await Call(client, "save_reply_draft", new() { ["to"] = "park@brand.example", ["subject"] = "RE", ["body"] = "x" });
+        await Call(client, "save_reply_draft", new() { ["to"] = "evil@attacker.com", ["subject"] = "RE", ["body"] = "x" });
+
+        using var check = host.Services.CreateScope();
+        var drafts = await check.ServiceProvider.GetRequiredService<OfnrDb>().MailDrafts.Where(d => d.ReplyToMailId == s.MailId).OrderBy(d => d.CreatedAt).ToListAsync(Ct);
+        Assert.Equal(["park@brand.example", "박문의 <park@brand.example>"], drafts.Select(d => d.To)); // the Reply-To, not the no-reply sender
+    }
+
+    [Fact]
     public async Task Reply_job_does_not_see_the_internal_cost()
     {
         var s = await Seed();

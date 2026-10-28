@@ -612,7 +612,7 @@ function ReplyEditor({
   const [v, setV] = useState<DraftInput>(() => ({
     replyToMailId: mail.id,
     projectId: mail.projectId,
-    to: mail.fromAddress,
+    to: mail.replyTo || mail.fromAddress,
     cc: "",
     subject: /^re:/i.test(mail.subject) ? mail.subject : `RE: ${mail.subject}`,
     body: "",

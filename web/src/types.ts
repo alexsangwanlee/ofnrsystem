@@ -130,6 +130,8 @@ export interface MailAttachmentDto { index: number; fileName: string; size: numb
 export interface MailDetailDto extends MailSummaryDto {
   to: string;
   cc: string | null;
+  /** Where a reply goes, when the mail sets Reply-To (web forms send from a no-reply address). */
+  replyTo: string | null;
   textBody: string | null;
   htmlBody: string | null;
   attachments: MailAttachmentDto[];

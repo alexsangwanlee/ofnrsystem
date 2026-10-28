@@ -53,7 +53,7 @@ public static partial class MailEndpoints
                 .OrderBy(x => x.ReceivedAt).ToSummaries().ToListAsync();
             return Results.Ok(new MailDetailDto(
                 m.Id, m.FromName, m.FromAddress, m.Subject, m.ReceivedAt, m.Status, m.Category, m.Summary, m.ProjectId, m.Project?.JobNo,
-                m.SuggestedProjectId, m.SuggestedConfidence, m.Attachments.Count > 0, thread.Single(t => t.Id == id).HasDraft, m.To, m.Cc, m.TextBody, m.HtmlBody, m.Attachments,
+                m.SuggestedProjectId, m.SuggestedConfidence, m.Attachments.Count > 0, thread.Single(t => t.Id == id).HasDraft, m.To, m.Cc, m.ReplyTo, m.TextBody, m.HtmlBody, m.Attachments,
                 m.Extracted?.RootElement ?? EmptyObject, thread));
         });
 
