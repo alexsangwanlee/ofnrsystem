@@ -23,6 +23,8 @@ public sealed class PgDumpRunner(SettingsStore settings, SecretStore secrets) : 
         if (db.Username is { Length: > 0 } user) { psi.ArgumentList.Add("-U"); psi.ArgumentList.Add(user); }
         psi.ArgumentList.Add(db.Database ?? "ofnr_ops");
         if (db.Password is { Length: > 0 } password) psi.Environment["PGPASSWORD"] = password;
+        // pg_dump on Korean Windows prints its errors in CP949, which the UTF-8 read below would garble; C means plain English.
+        psi.Environment["LC_MESSAGES"] = "C";
 
         using var p = Process.Start(psi)!;
         using var kill = ct.Register(() =>

@@ -100,13 +100,13 @@ public sealed class BackupTests
         const string noPassword = "Host=127.0.0.1;Port=5432;Database=ofnr_ops;Username=ofnr"; // what setup.ps1 writes
         var pgDump = settings.Current.PgDumpPath = Path.Combine(data, "pg_dump");
         settings.Current.ConnectionString = noPassword;
-        File.WriteAllText(pgDump, "#!/bin/sh\nprintf '%s\\n' \"$PGPASSWORD\" \"$@\" > \"$0.log\"\n");
+        File.WriteAllText(pgDump, "#!/bin/sh\nprintf '%s\\n' \"$PGPASSWORD\" \"$LC_MESSAGES\" \"$@\" > \"$0.log\"\n");
         if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(pgDump, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
         var file = Path.Combine(data, "out.dump");
 
         await new PgDumpRunner(settings, secrets).DumpAsync(file, Ct);
 
-        Assert.Equal(["s3cret-from-setup", "-Fc", "-w", "-f", file, "-h", "127.0.0.1", "-p", "5432", "-U", "ofnr", "ofnr_ops"], File.ReadAllLines(pgDump + ".log"));
+        Assert.Equal(["s3cret-from-setup", "C", "-Fc", "-w", "-f", file, "-h", "127.0.0.1", "-p", "5432", "-U", "ofnr", "ofnr_ops"], File.ReadAllLines(pgDump + ".log"));
         Assert.Equal(noPassword + ";Password=s3cret-from-setup", secrets.WithDbPassword(noPassword));
         Assert.Equal(noPassword + ";Password=ofnr_dev", secrets.WithDbPassword(noPassword + ";Password=ofnr_dev"));
     }
