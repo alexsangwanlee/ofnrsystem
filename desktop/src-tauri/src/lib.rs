@@ -38,6 +38,12 @@ fn ready_url(line: &[u8]) -> Option<String> {
     url.starts_with("http://127.0.0.1:").then(|| url.to_string())
 }
 
+/// A release build has no console, so the server's first stderr line (the cause, or a .NET crash's header) goes in the dialog.
+fn exit_detail(code: Option<i32>, first_err: &str) -> String {
+    let code = code.map_or("없음".to_string(), |c| c.to_string());
+    format!("서버가 종료되었습니다. (코드 {code})\n{first_err}").trim_end().to_string()
+}
+
 fn kill_sidecar(app: &AppHandle) {
     if let Some(child) = app.state::<Sidecar>().child.lock().unwrap().take() {
         // The child runs in a job object (set_process_group), so this also ends the claude and codex CLIs it started.
@@ -124,6 +130,8 @@ fn start_sidecar(app: &tauri::App) {
     let handle = app.handle().clone();
     // Keeps reading after OFNR_READY: the plugin's channel holds one event, so an unread one blocks the server's stdout.
     tauri::async_runtime::spawn(async move {
+        // The plugin delivers every stderr line before Terminated.
+        let mut first_err = String::new();
         while let Some(event) = events.recv().await {
             match event {
                 CommandEvent::Stdout(line) => {
@@ -131,8 +139,14 @@ fn start_sidecar(app: &tauri::App) {
                         settle(&handle, Ok(url));
                     }
                 }
-                CommandEvent::Stderr(line) => eprintln!("[server] {}", String::from_utf8_lossy(&line)),
-                CommandEvent::Terminated(t) => settle(&handle, Err(format!("서버가 종료되었습니다. (코드 {:?})", t.code))),
+                CommandEvent::Stderr(line) => {
+                    let line = String::from_utf8_lossy(&line);
+                    if first_err.is_empty() {
+                        first_err = line.trim().to_string();
+                    }
+                    eprintln!("[server] {line}");
+                }
+                CommandEvent::Terminated(t) => settle(&handle, Err(exit_detail(t.code, &first_err))),
                 _ => {}
             }
         }
@@ -192,12 +206,21 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::ready_url;
+    use super::{exit_detail, ready_url};
 
     #[test]
     fn reads_only_the_loopback_ready_line() {
         assert_eq!(ready_url(b"OFNR_READY http://127.0.0.1:53817\r\n").as_deref(), Some("http://127.0.0.1:53817"));
         assert_eq!(ready_url(b"info: Microsoft.Hosting.Lifetime[0]"), None);
         assert_eq!(ready_url(b"OFNR_READY http://evil.example:80"), None);
+    }
+
+    #[test]
+    fn exit_dialog_names_the_server_error() {
+        assert_eq!(
+            exit_detail(Some(1), "settings.json 형식이 잘못되었습니다: C:\\OFNR\\settings.json"),
+            "서버가 종료되었습니다. (코드 1)\nsettings.json 형식이 잘못되었습니다: C:\\OFNR\\settings.json"
+        );
+        assert_eq!(exit_detail(None, ""), "서버가 종료되었습니다. (코드 없음)");
     }
 }
