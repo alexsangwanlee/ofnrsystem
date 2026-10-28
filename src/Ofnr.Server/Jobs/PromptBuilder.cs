@@ -32,6 +32,7 @@ public static class PromptBuilder
             if (r.DocCode is { } code && r.OutputDir is { } outputDir && ctx.JobNo is { } jobNo)
             {
                 var dir = Path.GetFullPath(Path.Combine(folder, outputDir));
+                Directory.CreateDirectory(dir); // the Illustrator MCP refuses to export into a missing folder, and the AI has no shell
                 // The version is exact; the extension follows the skill, and a PDF copy shares the name.
                 var next = Path.GetFileNameWithoutExtension(ProjectFolders.NextVersionedName(dir, jobNo, code, "x"));
                 s.AppendLine($"- 결과물 폴더: {dir}");

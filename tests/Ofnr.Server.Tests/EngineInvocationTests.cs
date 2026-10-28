@@ -63,13 +63,21 @@ public sealed class EngineInvocationTests : IDisposable
         Assert.Null(plan.SchemaPath);
         Assert.Equal(
             ["--plugin-dir", o.PluginDir, "--mcp-config", mcpPath, "--strict-mcp-config", "--permission-mode", "dontAsk",
-             "--allowedTools", "Read,Write,Edit,Glob,Grep,Skill,TodoWrite,mcp__ofnr__*,mcp__excel__*", "--disallowedTools", "Bash",
+             "--allowedTools", $"Read,Write(/{Folder}/**),Write(/{plan.WorkDir}/**),Edit(/{Folder}/**),Edit(/{plan.WorkDir}/**),Glob,Grep,Skill,TodoWrite,mcp__ofnr__*,mcp__excel__*",
+             "--disallowedTools", "Bash",
              "--append-system-prompt", "시스템 지시", "--add-dir", Folder, "--model", "opus"],
             plan.ExtraArgs);
 
         var learning = Ctx("skill-learning", "claude", null);
         var learn = EngineInvocation.Build(learning.Recipe, learning, o, "t", "s").ExtraArgs.ToArray();
         Assert.Equal(Path.Combine(o.PluginDir, "skills"), learn[Array.IndexOf(learn, "--add-dir") + 1]);
+
+        // A bare Write or Edit would reach any file, a job without a project folder included.
+        var free = Ctx("free", "claude", null);
+        var freePlan = EngineInvocation.Build(free.Recipe, free, o, "t", "s");
+        static string[] Allowed(IReadOnlyList<string> a) => a[a.ToList().IndexOf("--allowedTools") + 1].Split(',');
+        Assert.All(new[] { plan.ExtraArgs, learn, freePlan.ExtraArgs }, a => Assert.DoesNotContain(Allowed(a), t => t is "Write" or "Edit"));
+        Assert.Contains($"Write(/{freePlan.WorkDir}/**)", Allowed(freePlan.ExtraArgs));
 
         File.Delete(Path.Combine(root, "mcp.json"));
         var e = Assert.Throws<InvalidOperationException>(() => EngineInvocation.Build(ctx.Recipe, ctx, o, "t", "s"));
@@ -128,9 +136,9 @@ public sealed class EngineInvocationTests : IDisposable
     }
 
     [Theory]
-    [InlineData("model3d")]
-    [InlineData("graphic")]
-    public void Script_recipes_cannot_read_mail_through_the_dashboard(string recipe)
+    [InlineData("model3d", "Bash,mcp__ofnr__get_mail_thread,mcp__sketchup__eval_ruby")]
+    [InlineData("graphic", "Bash,mcp__ofnr__get_mail_thread")]
+    public void Script_recipes_cannot_read_mail_through_the_dashboard(string recipe, string denied)
     {
         var o = Options();
         var claude = Ctx(recipe, "claude", Folder);
@@ -139,7 +147,7 @@ public sealed class EngineInvocationTests : IDisposable
         var args = EngineInvocation.Build(claude.Recipe, claude, o, "t", "s").ExtraArgs.ToArray();
         var c = ConfigValues(EngineInvocation.Build(codex.Recipe, codex, o, "t", "s"));
 
-        Assert.Equal("Bash,mcp__ofnr__get_mail_thread", args[Array.IndexOf(args, "--disallowedTools") + 1]);
+        Assert.Equal(denied, args[Array.IndexOf(args, "--disallowedTools") + 1]);
         Assert.Contains("mcp_servers.ofnr.disabled_tools=[\"get_mail_thread\"]", c);
     }
 
@@ -216,5 +224,6 @@ public sealed class EngineInvocationTests : IDisposable
         Assert.DoesNotContain("도면 전달", system + user);
         Assert.DoesNotContain("untrusted_mail", user);
         Assert.Contains("ofnr:sketchup", system);
+        Assert.True(Directory.Exists(Path.Combine(Folder, "02_DESIGN", "3D")));
     }
 }

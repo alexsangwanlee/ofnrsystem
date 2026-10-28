@@ -61,6 +61,9 @@ public sealed class RecipeCatalog(IReadOnlyList<Recipe> all)
         // The CEO and skill-learning jobs edit this file; it must never switch the engines' safety off.
         if (recipes.FirstOrDefault(r => r.Claude.PermissionMode == "bypassPermissions" || r.Codex.Sandbox == "danger-full-access") is { } bad)
             throw new InvalidDataException($"recipes.json의 {bad.Id} 작업에 허용되지 않는 권한 설정이 있습니다: {path}");
+        // A shell is not held to the job's folders, so a recipe that allows one must never read mail (untrustedMailInPrompt: false).
+        if (recipes.FirstOrDefault(r => r.UntrustedMailInPrompt && r.Claude.AllowedTools.Any(t => t == "Bash" || t.StartsWith("Bash("))) is { } shell)
+            throw new InvalidDataException($"recipes.json의 {shell.Id} 작업은 Bash를 허용하므로 untrustedMailInPrompt를 false로 두어야 합니다: {path}");
         return new(recipes);
     }
 }

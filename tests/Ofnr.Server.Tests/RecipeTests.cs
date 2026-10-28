@@ -49,6 +49,26 @@ public sealed class RecipeTests
         Assert.Null(catalog.Get("nope"));
     }
 
+    [Theory]
+    [InlineData("""[{ "id": "quote", "name": "견적서", "claude": { "allowedTools": ["Read", "Bash"], "disallowedTools": [] } }]""", false)]
+    [InlineData("""[{ "id": "quote", "name": "견적서", "claude": { "allowedTools": ["Bash(python:*)"] } }]""", false)]
+    [InlineData("""[{ "id": "quote", "name": "견적서", "untrustedMailInPrompt": false, "claude": { "allowedTools": ["Read", "Bash"], "disallowedTools": [] } }]""", true)]
+    public void A_recipe_that_allows_bash_must_keep_mail_out(string json, bool loads)
+    {
+        var path = Path.GetTempFileName();
+        try
+        {
+            File.WriteAllText(path, json);
+
+            if (loads) Assert.Single(RecipeCatalog.Load(path).All);
+            else Assert.Throws<InvalidDataException>(() => RecipeCatalog.Load(path));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
     [Fact]
     public void Bypass_permission_mode_is_rejected()
     {

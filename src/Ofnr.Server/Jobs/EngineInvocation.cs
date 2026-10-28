@@ -18,6 +18,9 @@ public static class EngineInvocation
     // Recipes that keep mail out of the prompt (Recipe.UntrustedMailInPrompt) must not fetch it through this tool either.
     const string MailTool = "get_mail_thread";
 
+    // Runs arbitrary Ruby with file, network and shell access, and the 3D job reads client files (00_IN attachments, BRIEF).
+    const string SketchupEval = "mcp__sketchup__eval_ruby";
+
     const int McpTimeoutSec = 1800;
 
     public static EnginePlan Build(Recipe r, JobContext ctx, OfnrOptions o, string mcpToken, string system)
@@ -43,9 +46,13 @@ public static class EngineInvocation
             var mcpPath = Path.Combine(work, "mcp.json");
             File.WriteAllText(mcpPath, new JsonObject { ["mcpServers"] = mcp }.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
 
+            // Bare Write/Edit reach any path, such as <data>\mcp.json, whose commands every later job starts.
+            string[] scopes = [.. new[] { writable, work }.OfType<string>().Distinct().Select(PathRule)];
+            var allowed = r.Claude.AllowedTools.SelectMany(t => t is "Write" or "Edit" ? scopes.Select(s => $"{t}({s})") : [t]);
             args.AddRange(["--plugin-dir", o.PluginDir, "--mcp-config", mcpPath, "--strict-mcp-config", "--permission-mode", r.Claude.PermissionMode,
-                "--allowedTools", string.Join(",", r.Claude.AllowedTools.Concat(r.McpServers.Select(s => $"mcp__{s}__*")))]);
+                "--allowedTools", string.Join(",", allowed.Concat(r.McpServers.Select(s => $"mcp__{s}__*")))]);
             string[] disallowed = r.UntrustedMailInPrompt ? r.Claude.DisallowedTools : [.. r.Claude.DisallowedTools, "mcp__ofnr__" + MailTool];
+            if (r.McpServers.Contains("sketchup")) disallowed = [.. disallowed, SketchupEval];
             if (disallowed.Length > 0) args.AddRange(["--disallowedTools", string.Join(",", disallowed)]);
             args.AddRange(["--append-system-prompt", system]);
             if (writable is not null) args.AddRange(["--add-dir", writable]);
@@ -90,6 +97,13 @@ public static class EngineInvocation
         if (writable is not null) args.AddRange(["--add-dir", writable]);
         if (o.CodexModel is { Length: > 0 } codexModel) args.AddRange(["-m", codexModel]);
         return new(work, args, env, Path.Combine(work, "schema.json"));
+    }
+
+    /// <summary>Claude Code's rule for everything under an absolute folder: <c>//tmp/x/**</c>, and <c>C:\x</c> as <c>//c/x/**</c>.</summary>
+    static string PathRule(string dir)
+    {
+        var full = Path.GetFullPath(dir).Replace('\\', '/').TrimEnd('/');
+        return "/" + (full.Length > 1 && full[1] == ':' ? "/" + char.ToLowerInvariant(full[0]) + full[2..] : full) + "/**";
     }
 
     /// <summary>The recipe's external servers from <c>&lt;data&gt;/mcp.json</c> (Claude's <c>mcpServers</c> format).</summary>
