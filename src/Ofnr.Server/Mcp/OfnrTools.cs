@@ -5,6 +5,7 @@ using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
+using MimeKit;
 using ModelContextProtocol;
 using ModelContextProtocol.Server;
 using Ofnr.Server.Data;
@@ -50,6 +51,8 @@ public sealed class OfnrTools(OfnrDb db, Approvals approvals, IOpsNotifier notif
         var job = await JobAsync(user, ct);
         if (job.ProjectId is not { } id) return "연결된 프로젝트가 없습니다.";
         var project = await ProjectEndpoints.DtoAsync(db, id);
+        // A reply body goes to the client, and an injected mail could ask for the internal cost.
+        if (job.RecipeId == "reply") project = project with { CostAmount = null };
         var client = project.ClientId is { } clientId ? ClientDto.From(await db.Clients.SingleAsync(c => c.Id == clientId, ct)) : null;
         var recentArtifacts = await db.Artifacts.Where(a => a.ProjectId == id).OrderByDescending(a => a.ModifiedAt).Take(20)
             .Select(a => new ArtifactDto(a.Id, a.ProjectId, a.JobId, a.RelativePath, a.DocCode, a.Version, a.Status, a.Size, a.ModifiedAt))
@@ -91,15 +94,33 @@ public sealed class OfnrTools(OfnrDb db, Approvals approvals, IOpsNotifier notif
         CancellationToken ct = default)
     {
         var job = await JobAsync(user, ct);
+        // Only addresses the thread or the client already uses: an injected "please also copy x@..." must not add one.
+        var mail = job.MailId is { } mailId ? await db.MailMessages.AsNoTracking().SingleAsync(m => m.Id == mailId, ct) : null;
+        var client = job.ProjectId is { } projectId ? await db.Projects.Where(p => p.Id == projectId).Select(p => p.Client).SingleOrDefaultAsync(ct) : null;
+        HashSet<string> known = new(StringComparer.OrdinalIgnoreCase);
+        if (mail is not null) known.UnionWith(new[] { mail.FromAddress, mail.To, mail.Cc }.SelectMany(Addresses).Select(a => a.Address));
+        if (client?.ContactEmail is { } contact) known.Add(contact.Trim());
+        var dropped = new List<string>();
+        string? Keep(string? list)
+        {
+            var all = Addresses(list);
+            var kept = all.Where(a => known.Contains(a.Address) || client?.MailDomains.Contains(a.Domain.ToLowerInvariant()) == true).ToList();
+            dropped.AddRange(all.Except(kept).Select(a => a.Address));
+            return kept.Count == 0 ? null : string.Join(", ", kept);
+        }
         var draft = new MailDraft
         {
-            ReplyToMailId = job.MailId, ProjectId = job.ProjectId, To = to, Cc = string.IsNullOrWhiteSpace(cc) ? null : cc,
+            ReplyToMailId = job.MailId, ProjectId = job.ProjectId, To = Keep(to) ?? (mail is { Outgoing: false } ? mail.FromAddress : ""), Cc = Keep(cc),
             Subject = subject, Body = body, Author = "ai",
         };
         db.MailDrafts.Add(draft);
         await db.SaveChangesAsync(ct);
-        return $"초안을 저장했습니다. 초안 id: {draft.Id}. 메일은 대표가 확인한 뒤 직접 보냅니다.";
+        return $"초안을 저장했습니다. 초안 id: {draft.Id}. 메일은 대표가 확인한 뒤 직접 보냅니다."
+            + (dropped.Count == 0 ? "" : $" 메일 스레드와 거래처에 없는 주소는 뺐습니다: {string.Join(", ", dropped)}. 필요하면 대표가 직접 넣습니다.");
     }
+
+    static List<MailboxAddress> Addresses(string? list) =>
+        !string.IsNullOrWhiteSpace(list) && InternetAddressList.TryParse(list.Replace(';', ','), out var parsed) ? [.. parsed.Mailboxes] : [];
 
     [McpServerTool(Name = "report_progress", Destructive = false)]
     [Description("대표 화면에 진행 상황을 한 줄로 남깁니다.")]

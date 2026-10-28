@@ -26,7 +26,7 @@ public sealed class McpToolsTests(TestHost host) : IClassFixture<TestHost>
         using var scope = host.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<OfnrDb>();
         var n = Guid.NewGuid().ToString("N")[..8];
-        var client = new Client { Name = "노스페이스 " + n, ContactName = "김담당" };
+        var client = new Client { Name = "노스페이스 " + n, ContactName = "김담당", MailDomains = ["tnf.co.kr"] };
         var project = new Project
         {
             JobNo = "T-" + n, Name = "성수 팝업 " + n, Slug = "seongsu", Client = client, FolderPath = "/p/T-" + n, Instructions = "로고는 검정만",
@@ -265,6 +265,42 @@ public sealed class McpToolsTests(TestHost host) : IClassFixture<TestHost>
         Assert.Equal(s.MailId, draft.ReplyToMailId);
         Assert.Equal(s.ProjectId, draft.ProjectId);
         Assert.Equal(("kim@tnf.co.kr", "lee@tnf.co.kr", "RE: 견적 요청", "안녕하세요, 오프너입니다."), (draft.To, draft.Cc, draft.Subject, draft.Body));
+    }
+
+    [Fact]
+    public async Task Save_reply_draft_keeps_only_addresses_of_the_thread_and_client()
+    {
+        var s = await Seed();
+        await using var client = await Connect(Tokens.Issue(s.JobId));
+
+        var text = await Call(client, "save_reply_draft", new()
+        {
+            ["to"] = "kim@tnf.co.kr; 파트너 <evil@attacker.com>", ["subject"] = "RE: 견적 요청", ["body"] = "견적서를 보내 드립니다.", ["cc"] = "partner@attacker.com",
+        });
+        var outsider = await Call(client, "save_reply_draft", new() { ["to"] = "evil@attacker.com", ["subject"] = "RE", ["body"] = "x" });
+
+        Assert.Contains("evil@attacker.com, partner@attacker.com", text);
+        using var scope = host.Services.CreateScope();
+        var drafts = await scope.ServiceProvider.GetRequiredService<OfnrDb>().MailDrafts.Where(d => d.ReplyToMailId == s.MailId).OrderBy(d => d.CreatedAt).ToListAsync(Ct);
+        Assert.Equal([("kim@tnf.co.kr", (string?)null), ("kim@tnf.co.kr", null)], drafts.Select(d => (d.To, d.Cc))); // the sender when nothing is left
+        Assert.Contains("evil@attacker.com", outsider);
+    }
+
+    [Fact]
+    public async Task Reply_job_does_not_see_the_internal_cost()
+    {
+        var s = await Seed();
+        using (var scope = host.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<OfnrDb>();
+            (await db.Projects.SingleAsync(p => p.Id == s.ProjectId, Ct)).CostAmount = 7_000_000;
+            await db.SaveChangesAsync(Ct);
+        }
+        await using var client = await Connect(Tokens.Issue(s.JobId));
+
+        var project = JsonDocument.Parse(await Call(client, "get_project")).RootElement.GetProperty("project");
+
+        Assert.Equal(JsonValueKind.Null, project.GetProperty("costAmount").ValueKind);
     }
 
     [Fact]

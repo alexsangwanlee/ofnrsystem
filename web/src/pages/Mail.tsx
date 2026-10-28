@@ -687,7 +687,7 @@ function ReplyEditor({
       <Confirm
         open={confirming}
         title="메일을 보낼까요?"
-        body={`이 메일을 보냅니다. 받는 사람: ${v.to.trim()}`}
+        body={`이 메일을 보냅니다. 받는 사람: ${v.to.trim()}${v.cc?.trim() ? `, 참조: ${v.cc.trim()}` : ""}`}
         confirm="보내기"
         busy={busy}
         onConfirm={send}

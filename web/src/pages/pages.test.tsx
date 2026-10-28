@@ -409,10 +409,11 @@ describe("pages", () => {
     const to = (await screen.findByLabelText(/받는 사람/)) as HTMLInputElement;
     expect(to.value).toBe("kim@client.co.kr");
     fireEvent.change(screen.getByLabelText(/^본문/), { target: { value: "안녕하세요" } });
+    fireEvent.change(screen.getByLabelText(/^참조/), { target: { value: "lee@client.co.kr" } });
     fireEvent.click(screen.getByRole("button", { name: "보내기" }));
 
     const dialog = await screen.findByRole("dialog");
-    expect(within(dialog).getByText("이 메일을 보냅니다. 받는 사람: kim@client.co.kr")).toBeTruthy();
+    expect(within(dialog).getByText("이 메일을 보냅니다. 받는 사람: kim@client.co.kr, 참조: lee@client.co.kr")).toBeTruthy();
     expect(calls.some((c) => c.method === "POST")).toBe(false);
 
     fireEvent.click(within(dialog).getByRole("button", { name: "보내기" }));
