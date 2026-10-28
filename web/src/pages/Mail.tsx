@@ -607,6 +607,7 @@ function ReplyEditor({
 
   // An unsent draft (the AI's from the 회신 초안 job, or one saved earlier) is picked up once.
   const loaded = useRef(false);
+  const dirty = useRef(false);
   useEffect(() => {
     if (loaded.current || !drafts.data) return;
     loaded.current = true;
@@ -636,6 +637,7 @@ function ReplyEditor({
     onBlur: val.blur(name),
     onChange: (_: unknown, d: { value: string }) => {
       val.edit(name);
+      dirty.current = true;
       setV((x) => ({ ...x, [name]: d.value }));
     },
   });
@@ -646,8 +648,22 @@ function ReplyEditor({
       ? await api<MailDraftDto>(`/api/mail/drafts/${draftId}`, { method: "PUT", body })
       : await api<MailDraftDto>("/api/mail/drafts", { method: "POST", body });
     setDraftId(d.id);
+    dirty.current = false;
     return d;
   };
+  // 닫기, another mail (MailReader is keyed by id) or another page unmounts the editor: keep what was typed.
+  // Not before the saved drafts load (it would add a second draft) and not after a send (persist cleared the flag).
+  // shortcut: a save that fails here (e.g. 받는 사람 cleared) is silent; the server's last draft stays.
+  const persistLatest = useRef(persist);
+  useEffect(() => {
+    persistLatest.current = persist;
+  });
+  useEffect(
+    () => () => {
+      if (dirty.current && loaded.current) void persistLatest.current().catch(() => undefined);
+    },
+    [],
+  );
   const saveDraft = () => {
     if (!val.check()) return;
     void run(async () => {
@@ -664,8 +680,10 @@ function ReplyEditor({
       onClose();
     }).then(() => setConfirming(false));
 
-  const toggleFile = (path: string, on: boolean) =>
+  const toggleFile = (path: string, on: boolean) => {
+    dirty.current = true;
     setV((x) => ({ ...x, attachments: on ? [...x.attachments, path] : x.attachments.filter((a) => a !== path) }));
+  };
 
   return (
     <Section title="답장">

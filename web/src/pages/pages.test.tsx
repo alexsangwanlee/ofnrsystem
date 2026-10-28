@@ -544,6 +544,20 @@ describe("pages", () => {
     expect(calls.filter((c) => c.method === "POST")).toHaveLength(2);
   });
 
+  it("Mail_reply_keeps_typed_text_when_the_editor_closes", async () => {
+    const calls = mockApi(mailRoutes);
+    await openReply();
+    fireEvent.click(screen.getByRole("button", { name: "닫기" }));
+
+    await waitFor(() => expect(calls.find((c) => c.method === "POST" && c.path === "/api/mail/drafts")?.body).toMatchObject({ body: "안녕하세요" }));
+    // Closed again without typing, it saves nothing.
+    fireEvent.click(screen.getByRole("button", { name: "답장 쓰기" }));
+    await screen.findByRole("button", { name: "초안 저장" });
+    fireEvent.click(screen.getByRole("button", { name: "닫기" }));
+    await act(() => new Promise((r) => setTimeout(r, 0)));
+    expect(calls.filter((c) => c.method !== "GET")).toHaveLength(1);
+  });
+
   it("Mail_reply_waits_for_saved_drafts_and_offers_retry", async () => {
     const { "GET /api/mail/drafts": _, ...withoutDrafts } = mailRoutes;
     mockApi(withoutDrafts);
