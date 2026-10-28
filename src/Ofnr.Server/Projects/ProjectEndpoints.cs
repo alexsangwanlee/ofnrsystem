@@ -214,10 +214,13 @@ public static class ProjectEndpoints
             log.LogInformation("Open skipped on this OS: {Path}", full);
             return Results.NoContent();
         }
-        // Full path: a bare explorer.exe is searched in the app and current directories first.
+        // Full path: a bare explorer.exe is searched in the app and current directories first. explorer.exe hands the path to
+        // the running shell and exits, so Excel or Illustrator starts outside the sidecar's job object and survives 종료 and
+        // updates; ShellExecute from here would make it a child that TerminateJobObject kills unsaved. Quoted, since explorer
+        // splits an unquoted argument at commas.
         var explorer = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe");
-        try { Process.Start(isDir ? new ProcessStartInfo(explorer) { ArgumentList = { full } } : new ProcessStartInfo(full) { UseShellExecute = true })?.Dispose(); }
-        catch (Win32Exception) { return Error(400, "이 파일을 열 프로그램이 없습니다. 프로그램을 설치한 뒤 다시 열어 주세요."); }
+        try { Process.Start(new ProcessStartInfo(explorer, $"\"{Path.TrimEndingDirectorySeparator(full)}\""))?.Dispose(); }
+        catch (Win32Exception) { return Error(400, "파일을 열지 못했습니다. 탐색기에서 직접 열어 주세요."); }
         return Results.NoContent();
     }
 

@@ -37,7 +37,7 @@ scripts/                setup.ps1(대표 PC 준비), publish-sidecar.ps1, dev.sh
 - 서버는 `http://127.0.0.1:0`에 열고(`settings.json`의 포트는 쓰지 않는다), 실제 주소를 `OFNR_READY http://127.0.0.1:<port>` 한 줄로 표준출력에 쓴다. Host 검사와 작업의 MCP 주소도 이 포트를 쓴다. 표준출력과 표준오류는 UTF-8이다. 표준입력이 닫히면(앱이 죽으면) 스스로 끝난다.
 - 화면은 `invoke("server_info")`로 `{ baseUrl, token }`을 받는다. 서버가 준비될 때까지 기다리고, 60초 안에 준비되지 않거나 서버가 먼저 끝나면 "서버를 시작하지 못했습니다" 창을 띄우고 앱을 끝낸다.
 - 업데이트: `check()`, `download()`, `invoke("stop_backend")`, `install()` 순서. 실행 중인 작업이 있으면 설정 화면이 업데이트를 막는다.
-- 창을 닫으면 숨기기만 한다. 트레이의 종료로 끝내면 사이드카도 같이 끝난다(작업 개체라 claude, codex 자식까지).
+- 창을 닫으면 숨기기만 한다. 트레이의 종료로 끝내면 사이드카도 같이 끝난다(작업 개체라 claude, codex 자식까지). 그래서 `POST /api/open`은 파일과 폴더를 `explorer.exe`에 넘긴다. 서버가 직접 ShellExecute로 열면 Excel이나 Illustrator가 작업 개체 안에서 떠서 종료나 업데이트 때 저장하지 않은 채 꺼진다.
 
 데이터: `C:\OFNR` (Windows), `~/.ofnr` (그 밖), 환경 변수 `OFNR_DATA`로 바꾼다. `settings.json`, `secrets\*.bin`(DPAPI), `mcp.json`, `recipes.json`, `claude-plugin\`(git 기록), `jobs\`, `templates\`, `backups\`, `tools\`(MCP 서버).
 
