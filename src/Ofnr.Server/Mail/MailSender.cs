@@ -93,6 +93,14 @@ public sealed class MailSender(OfnrDb db, SettingsStore settings, ISmtpTransport
         var now = DateTimeOffset.UtcNow;
         (d.Status, d.SentAt, d.UpdatedAt) = ("sent", now, now);
         if (replied is not null) replied.Status = MailStatus.Done;
+        // Project files that went out are now with the client.
+        if (d.ProjectId is { } projectId && d.Attachments.Length > 0 && await db.Projects.FindAsync(projectId) is { } project)
+        {
+            var sentFiles = d.Attachments.Select(f => Path.GetRelativePath(project.FolderPath, f).Replace('\\', '/')).ToList();
+            foreach (var a in await db.Artifacts.Where(a => a.ProjectId == projectId && sentFiles.Contains(a.RelativePath)
+                && (a.Status == ArtifactStatus.Draft || a.Status == ArtifactStatus.InternalApproved)).ToListAsync()) // enums are stored as text, where < would compare names
+                a.Status = ArtifactStatus.SentToClient;
+        }
         // Older drafts of this reply (an AI rerun, an early save) would keep 초안 있음 and load again into 답장 쓰기.
         if (d.ReplyToMailId is { } replyTo)
             db.MailDrafts.RemoveRange(await db.MailDrafts.Where(x => x.ReplyToMailId == replyTo && x.Id != d.Id && x.Status == "draft").ToListAsync());

@@ -16,10 +16,11 @@ public sealed record ClientDto(
     public static ClientDto From(Client c) => new(c.Id, c.Name, c.BizRegNo, c.ContactName, c.ContactEmail, c.ContactPhone, c.MailDomains, c.Notes);
 }
 
+/// <param name="Status">Null keeps the project's status (a new project starts Active).</param>
 public sealed record ProjectInput(
     string? Name, string? Slug, Guid? ClientId, ProjectStage? Stage, string? Venue,
     DateOnly? InstallDate, DateOnly? OpenDate, DateOnly? EndDate, DateOnly? TeardownDate,
-    long? QuoteAmount, long? ContractAmount, long? CostAmount, string? Instructions);
+    long? QuoteAmount, long? ContractAmount, long? CostAmount, string? Instructions, ProjectStatus? Status = null);
 
 public sealed record ProjectDto(
     Guid Id, string JobNo, string Name, string Slug, Guid? ClientId, string? ClientName, ProjectStage Stage, ProjectStatus Status, string? Venue,

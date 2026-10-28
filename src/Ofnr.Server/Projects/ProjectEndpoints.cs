@@ -46,6 +46,7 @@ public static class ProjectEndpoints
         string.IsNullOrWhiteSpace(i.Name) ? "프로젝트 이름을 입력해 주세요."
         // The enum converter still reads comma lists such as "Report, Done" into undefined values.
         : i.Stage is { } s && !Enum.IsDefined(s) ? "알 수 없는 단계입니다."
+        : i.Status is { } st && !Enum.IsDefined(st) ? "알 수 없는 상태입니다."
         : i.ClientId is { } c && !await db.Clients.AnyAsync(x => x.Id == c) ? "거래처를 찾을 수 없습니다."
         : null;
 
@@ -156,6 +157,9 @@ public static class ProjectEndpoints
             {
                 db.Activities.Add(new Activity { ProjectId = id, Kind = "stage", Text = $"단계를 옮겼습니다: {StageLabels[(int)p.Stage]} → {StageLabels[(int)stage]}" });
                 p.Stage = stage;
+                // 완료 is both a stage and a status; on hold and lost stay as the CEO set them.
+                if (stage == ProjectStage.Done && p.Status == ProjectStatus.Active) p.Status = ProjectStatus.Completed;
+                else if (stage != ProjectStage.Done && p.Status == ProjectStatus.Completed) p.Status = ProjectStatus.Active;
                 p.UpdatedAt = DateTimeOffset.UtcNow;
                 await db.SaveChangesAsync();
             }
@@ -255,6 +259,7 @@ public static class ProjectEndpoints
         p.ContractAmount = i.ContractAmount;
         p.CostAmount = i.CostAmount;
         p.Instructions = i.Instructions;
+        if (i.Status is { } status) p.Status = status;
     }
 
     static IResult ProjectNotFound() => Error(404, "프로젝트를 찾을 수 없습니다.");

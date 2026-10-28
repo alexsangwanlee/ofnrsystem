@@ -19,7 +19,7 @@ import {
 import { Dismiss24Regular } from "@fluentui/react-icons";
 import { api } from "../api";
 import { stageLabel } from "../format";
-import { STAGES, type ClientDto, type ProjectDto, type ProjectInput, type Stage } from "../types";
+import { STAGES, type ClientDto, type ProjectDto, type ProjectInput, type ProjectStatus, type Stage } from "../types";
 import { ErrorBar, useAction, useApi, useUi, useValidation } from "./ui";
 
 const useStyles = makeStyles({
@@ -38,6 +38,12 @@ const DATES = [
   ["endDate", "종료일"],
   ["teardownDate", "철수일"],
 ] as const;
+const STATUSES: [ProjectStatus, string][] = [
+  ["Active", "진행"],
+  ["OnHold", "보류"],
+  ["Lost", "실주"],
+  ["Completed", "완료"],
+];
 const AMOUNTS = [
   ["quoteAmount", "견적액"],
   ["contractAmount", "계약액"],
@@ -63,18 +69,20 @@ export function toInput(p: ProjectDto): ProjectSeed {
     contractAmount: p.contractAmount,
     costAmount: p.costAmount,
     instructions: p.instructions,
+    status: p.status,
   };
 }
 
 type Values = Record<string, string>;
 
-const KEYS = ["name", "slug", "clientName", "stage", "venue", "instructions", ...DATES.map((d) => d[0]), ...AMOUNTS.map((a) => a[0])];
+const KEYS = ["name", "slug", "clientName", "stage", "status", "venue", "instructions", ...DATES.map((d) => d[0]), ...AMOUNTS.map((a) => a[0])];
 
 function toValues(seed: ProjectSeed): Values {
   const v: Values = {};
   for (const k of KEYS) v[k] = String(seed[k as keyof ProjectSeed] ?? "");
   for (const [k] of DATES) v[k] = v[k].slice(0, 10);
   v.stage ||= "Inquiry";
+  v.status ||= "Active";
   return v;
 }
 
@@ -159,6 +167,7 @@ export function ProjectForm({
         contractAmount: amount("contractAmount"),
         costAmount: amount("costAmount"),
         instructions: text("instructions"),
+        status: editing ? (v.status as ProjectStatus) : null,
       });
       onClose();
     });
@@ -217,6 +226,17 @@ export function ProjectForm({
                 {STAGES.map((st) => (
                   <option key={st} value={st}>
                     {stageLabel(st)}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          )}
+          {editing && (
+            <Field label="상태" hint="진행 중인 프로젝트만 메일 자동 연결과 AI 분류 후보가 됩니다.">
+              <Select value={v.status} onChange={(_, d) => setV((x) => ({ ...x, status: d.value }))}>
+                {STATUSES.map(([st, label]) => (
+                  <option key={st} value={st}>
+                    {label}
                   </option>
                 ))}
               </Select>

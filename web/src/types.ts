@@ -61,6 +61,8 @@ export interface ProjectInput {
   contractAmount?: number | null;
   costAmount?: number | null;
   instructions?: string | null;
+  /** Null keeps the project's status; a new project starts Active. */
+  status?: ProjectStatus | null;
 }
 export interface ProjectDto {
   id: string;

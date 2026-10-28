@@ -182,6 +182,25 @@ public sealed class ProjectApiTests(TestHost host) : IClassFixture<TestHost>
     }
 
     [Fact]
+    public async Task Status_follows_the_edit_and_the_move_to_done()
+    {
+        var p = await CreateProject(new { name = "상태 팝업" });
+        var id = p.GetProperty("id");
+        async Task<string?> Status(HttpMethod method, string path, object body) =>
+            (await Send(method, path, body)).GetProperty("project").GetProperty("status").GetString();
+
+        Assert.Equal("Active", p.GetProperty("status").GetString());
+        Assert.Equal("Lost", await Status(HttpMethod.Put, $"/api/projects/{id}", new { name = "상태 팝업", status = "Lost" }));
+        Assert.Equal("Lost", await Status(HttpMethod.Put, $"/api/projects/{id}", new { name = "상태 팝업" })); // no status keeps it
+        Assert.Equal("Lost", await Status(HttpMethod.Post, $"/api/projects/{id}/stage", new { stage = "Done" }));
+        await Send(HttpMethod.Put, $"/api/projects/{id}", new { name = "상태 팝업", status = "Active" });
+        Assert.Equal("Active", await Status(HttpMethod.Post, $"/api/projects/{id}/stage", new { stage = "Report" }));
+        Assert.Equal("Completed", await Status(HttpMethod.Post, $"/api/projects/{id}/stage", new { stage = "Done" }));
+        Assert.Equal("Active", await Status(HttpMethod.Post, $"/api/projects/{id}/stage", new { stage = "Report" }));
+        await Send(HttpMethod.Put, $"/api/projects/{id}", new { name = "상태 팝업", status = "Gone" }, HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
     public async Task Stage_move_returns_suggestions_and_warning()
     {
         var p = await CreateProject(new { name = "성수 팝업" });

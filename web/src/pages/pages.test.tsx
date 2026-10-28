@@ -579,6 +579,19 @@ describe("pages", () => {
     expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ clientId: "c1", instructions: "주말 설치 금지" }));
   });
 
+  it("ProjectForm_edit_sets_status", async () => {
+    mockApi({ "GET /api/clients": [{ id: "c1", name: "TNF", mailDomains: [] }] });
+    const onSubmit = vi.fn(async () => undefined);
+    renderAt(<ProjectForm open editing title="프로젝트 수정" seed={toInput(project)} onClose={() => undefined} onSubmit={onSubmit} />);
+
+    fireEvent.change(screen.getByLabelText(/상태/), { target: { value: "Lost" } });
+    const save = screen.getByRole("button", { name: "저장" }) as HTMLButtonElement;
+    await waitFor(() => expect(save.disabled).toBe(false));
+    fireEvent.click(save);
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ status: "Lost" })));
+  });
+
   it("ProjectForm_retry_after_failed_save_does_not_create_client_twice", async () => {
     const calls = mockApi({ "GET /api/clients": [], "POST /api/clients": { id: "c-new", name: "노스페이스", mailDomains: [] } });
     const onSubmit = vi.fn().mockRejectedValueOnce(new Error("저장하지 못했습니다.")).mockResolvedValue(undefined);

@@ -217,7 +217,7 @@ public sealed class MailApiTests
     }
 
     [Fact]
-    public async Task Send_takes_semicolons_closes_older_drafts_and_names_korean_files_for_old_outlook()
+    public async Task Send_takes_semicolons_closes_older_drafts_marks_sent_files_and_names_them_for_old_outlook()
     {
         await using var h = Host();
         Settings(h).Mail.Address = "ceo@ofnr.kr";
@@ -225,6 +225,11 @@ public sealed class MailApiTests
         var file = Path.Combine(p.Folder, "01_PLAN", "견적서 최종.pdf");
         File.WriteAllText(file, "견적");
         var mail = await AddMail(h, "견적 요청", edit: m => m.ProjectId = p.Id);
+        await using (var db = h.Db())
+        {
+            db.Artifacts.Add(new Artifact { ProjectId = p.Id, RelativePath = "01_PLAN/견적서 최종.pdf", Status = ArtifactStatus.InternalApproved, ModifiedAt = DateTimeOffset.UtcNow });
+            await db.SaveChangesAsync(Ct);
+        }
         object Draft(string to) => new { replyToMailId = mail.Id, to, subject = "RE: 견적 요청", body = "보내 드립니다.", attachments = new[] { file } };
         await h.Send(HttpMethod.Post, "/api/mail/drafts", Draft("kim@tnf.co.kr"));
         var newer = (await h.Send(HttpMethod.Post, "/api/mail/drafts", Draft("kim@tnf.co.kr; pm@tnf.co.kr;"))).GetProperty("id").GetGuid();
@@ -241,6 +246,8 @@ public sealed class MailApiTests
         Assert.Equal("견적서 최종.pdf", Assert.Single(m.Attachments).ContentDisposition?.FileName);
         Assert.Equal(newer, (await h.Send(HttpMethod.Get, $"/api/mail/drafts?mailId={mail.Id}")).EnumerateArray().Single().GetProperty("id").GetGuid());
         Assert.False((await h.Send(HttpMethod.Get, $"/api/mail/{mail.Id}")).GetProperty("hasDraft").GetBoolean());
+        await using (var db = h.Db())
+            Assert.Equal(ArtifactStatus.SentToClient, (await db.Artifacts.SingleAsync(a => a.ProjectId == p.Id, Ct)).Status);
     }
 
     [Fact]

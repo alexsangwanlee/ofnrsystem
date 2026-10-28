@@ -109,9 +109,9 @@ All bodies are JSON, camelCase. Ids are GUID strings. Dates ISO-8601. Money is i
 | GET `/api/today` | | `{ counts: { attention, running, thisWeek }, attention: AttentionDto[], unsortedMail: MailSummaryDto[], upcoming: UpcomingDto[], running: JobDto[] }` |
 | GET/POST `/api/clients`, PUT `/api/clients/{id}` | `ClientInput { name, bizRegNo?, contactName?, contactEmail?, contactPhone?, mailDomains: string[], notes? }` | `ClientDto` |
 | GET `/api/projects?stage=&status=` | | `ProjectDto[]` |
-| POST `/api/projects` | `ProjectInput { name, slug?, clientId?, stage?, venue?, installDate?, openDate?, endDate?, teardownDate?, quoteAmount?, contractAmount?, costAmount?, instructions? }` | `ProjectDto` (folder created) |
+| POST `/api/projects` | `ProjectInput { name, slug?, clientId?, stage?, venue?, installDate?, openDate?, endDate?, teardownDate?, quoteAmount?, contractAmount?, costAmount?, instructions?, status? }` (`status` null keeps the project's status; new projects start `Active`) | `ProjectDto` (folder created) |
 | GET/PUT `/api/projects/{id}` | `ProjectInput` | `ProjectDetailDto { project, mails: MailSummaryDto[], jobs: JobDto[], artifacts: ArtifactDto[], activity: ActivityDto[] }` |
-| POST `/api/projects/{id}/stage` | `{ stage }` | `{ project, suggestions: RecipeDto[], warnings: string[] }` |
+| POST `/api/projects/{id}/stage` | `{ stage }` | `{ project, suggestions: RecipeDto[], warnings: string[] }` (moving to `Done` turns an `Active` project `Completed`, moving out of `Done` turns `Completed` back to `Active`) |
 | GET `/api/projects/{id}/files` | | `FileDto[] { relativePath, size, modifiedAt, artifactId?, status? }` |
 | POST `/api/open` | `{ path }` | 204 |
 | GET `/api/mail?status=&projectId=&q=&skip=&take=` | | `MailSummaryDto[]` |
@@ -123,7 +123,7 @@ All bodies are JSON, camelCase. Ids are GUID strings. Dates ISO-8601. Money is i
 | POST `/api/mail/sync` | | `{ added }` |
 | GET `/api/mail/drafts?mailId=` | | `MailDraftDto[]` |
 | POST `/api/mail/drafts`, PUT `/api/mail/drafts/{id}` | `DraftInput { replyToMailId?, projectId?, to, cc?, subject, body, attachments: string[] }` | `MailDraftDto` |
-| POST `/api/mail/drafts/{id}/send` | | `MailDraftDto` (status `sent`) |
+| POST `/api/mail/drafts/{id}/send` | | `MailDraftDto` (status `sent`; the mail's other unsent drafts are deleted, and attached project files' `Draft`/`InternalApproved` artifacts become `SentToClient`) |
 | GET `/api/recipes` | | `RecipeDto[] { id, name, stage, engines, lock, needsProject }` |
 | GET `/api/jobs?status=&projectId=` | | `JobDto[]` |
 | POST `/api/jobs` | `JobInput { recipeId, projectId?, instruction, engine?, mailId? }` | `JobDto` |
