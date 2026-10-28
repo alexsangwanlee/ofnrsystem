@@ -74,6 +74,7 @@ Linux 개발 PC에서 .NET은 `export PATH=$HOME/.dotnet:$PATH`가 필요할 수
 - Enter로 제출하는 입력은 한글 조합 중 Enter를 무시한다: `e.nativeEvent.isComposing || e.keyCode === 229`.
 - `web/index.html`에 `<style>`을 두지 않고 CSS는 `web/src/index.css`에 둔다. Tauri가 인라인 `<style>`에 CSP nonce를 붙이면 `'unsafe-inline'`이 꺼져 Fluent UI 스타일이 사라진다.
 - Tauri 창은 `dragDropEnabled: false`를 유지한다. 켜면 프로젝트 보드의 카드 끌기가 동작하지 않는다.
+- 메인 창은 `tauri.conf.json`에 `"create": false`로 두고 `lib.rs`의 `setup`에서 만든다. 새 창 요청(메일 링크의 `target=_blank`)을 받아 http, https만 기본 브라우저로 열고 앱 창은 열지 않기 위해서다. 메일 본문 iframe은 `allow-popups`만 열고 스크립트는 막는다.
 - `src/`와 `tests/`는 경고를 오류로 처리한다. 가장 작은 변경으로 고치고, 고친 동작마다 테스트를 하나 둔다.
 
 ## 기능을 더하는 방법

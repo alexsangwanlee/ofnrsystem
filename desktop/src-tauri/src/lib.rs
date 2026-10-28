@@ -44,6 +44,11 @@ fn exit_detail(code: Option<i32>, first_err: &str) -> String {
     format!("서버가 종료되었습니다. (코드 {code})\n{first_err}").trim_end().to_string()
 }
 
+/// A link from a mail is untrusted: only web addresses reach the OS, never file: or an app's URL scheme.
+fn open_in_browser(url: &tauri::Url) -> bool {
+    matches!(url.scheme(), "http" | "https")
+}
+
 fn kill_sidecar(app: &AppHandle) {
     if let Some(child) = app.state::<Sidecar>().child.lock().unwrap().take() {
         // The child runs in a job object (set_process_group), so this also ends the claude and codex CLIs it started.
@@ -170,6 +175,17 @@ pub fn run() {
         .plugin(tauri_plugin_autostart::Builder::new().build())
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .setup(|app| {
+            // Built here, not from tauri.conf.json ("create": false), because only a builder takes a new-window handler.
+            tauri::WebviewWindowBuilder::from_config(app.handle(), &app.config().app.windows[0])?
+                .on_new_window(|url, _| {
+                    // Mail links (target=_blank) open in the default browser. Without a handler WebView2 drops them.
+                    if open_in_browser(&url) {
+                        #[allow(deprecated)] // the Rust-side open gives the page no shell permission
+                        let _ = tauri_plugin_shell::open::open(None, url.as_str(), None);
+                    }
+                    tauri::webview::NewWindowResponse::Deny
+                })
+                .build()?;
             start_sidecar(app);
             let open = MenuItem::with_id(app, "open", "열기", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "종료", true, None::<&str>)?;
@@ -206,7 +222,16 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{exit_detail, ready_url};
+    use super::{exit_detail, open_in_browser, ready_url};
+
+    #[test]
+    fn opens_only_web_links_in_the_browser() {
+        let ok = |u: &str| open_in_browser(&u.parse().unwrap());
+        assert!(ok("https://sample.example/plan"));
+        assert!(ok("http://drive.example/x"));
+        assert!(!ok("file:///C:/Windows/System32/calc.exe"));
+        assert!(!ok("ms-settings:privacy"));
+    }
 
     #[test]
     fn reads_only_the_loopback_ready_line() {

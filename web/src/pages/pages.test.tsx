@@ -536,6 +536,19 @@ describe("pages", () => {
     expect(calls.some((c) => c.path.includes("status="))).toBe(false);
   });
 
+  it("Mail_links_open_in_a_new_window_and_mail_scripts_stay_blocked", async () => {
+    mockApi({ ...mailRoutes, "GET /api/mail/m1": { ...mailDetail, textBody: "도면: https://sample.example/plan. 확인 부탁드립니다." } });
+    renderAt(<Mail />, "/mail/m1", "/mail/:id");
+    const link = (await screen.findByRole("link", { name: "https://sample.example/plan" })) as HTMLAnchorElement;
+    expect([link.href, link.target]).toEqual(["https://sample.example/plan", "_blank"]);
+
+    cleanup();
+    mockApi({ ...mailRoutes, "GET /api/mail/m1": { ...mailDetail, htmlBody: '<a href="https://sample.example/plan" target="_blank">도면 보기</a>' } });
+    renderAt(<Mail />, "/mail/m1", "/mail/:id");
+    const sandbox = (await screen.findByTitle("메일 본문")).getAttribute("sandbox")!.split(" ");
+    expect(sandbox).toEqual(["allow-popups", "allow-popups-to-escape-sandbox"]);
+  });
+
   it("Mail_done_closes_the_mail_from_the_reader_and_from_today", async () => {
     const unlinked = { ...mail, projectId: null, jobNo: null, status: "New" as const };
     const closed = { ...unlinked, status: "Done" as const };

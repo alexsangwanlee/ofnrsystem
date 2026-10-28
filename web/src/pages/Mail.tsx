@@ -126,6 +126,22 @@ const useStyles = makeStyles({
   files: { display: "flex", flexDirection: "column", maxHeight: "160px", overflowY: "auto" },
 });
 
+// The last character may not be punctuation that ends a sentence around the address.
+const URL_PART = /(https?:\/\/[^\s<>"]*[^\s<>".,;:!?)\]'])/;
+
+/** Plain-text mail with its http(s) addresses as links that open in the browser. */
+function linkify(text: string) {
+  return text.split(URL_PART).map((part, i) =>
+    i % 2 ? (
+      <a key={i} href={part} target="_blank" rel="noopener noreferrer">
+        {part}
+      </a>
+    ) : (
+      part
+    ),
+  );
+}
+
 /** Menu that links a mail to a project; the AI's suggestion comes first. */
 export function LinkProjectMenu({ mail, onLinked }: { mail: MailSummaryDto; onLinked: (m: MailSummaryDto) => void }) {
   const s = useStyles();
@@ -452,16 +468,16 @@ function MailReader({
               {saved && <Caption1 aria-live="polite">{saved}</Caption1>}
               {save.error && <ErrorBar message={save.error} />}
               {m.htmlBody ? (
-                // sandbox="" blocks scripts, forms and navigation from the mail HTML.
+                // The sandbox blocks scripts, forms and navigation from the mail HTML; its links (target=_blank) open in the browser.
                 // The app's font, which the mail's own styles override; without it the frame falls back to a serif.
                 <iframe
-                  sandbox=""
+                  sandbox="allow-popups allow-popups-to-escape-sandbox"
                   srcDoc={`<style>body{font-family:${lightTheme.fontFamilyBase}}</style>${m.htmlBody}`}
                   title="메일 본문"
                   className={s.frame}
                 />
               ) : (
-                <pre className={s.text}>{m.textBody ?? ""}</pre>
+                <pre className={s.text}>{linkify(m.textBody ?? "")}</pre>
               )}
               {m.thread.length > 1 && (
                 <Section title="같은 대화">
