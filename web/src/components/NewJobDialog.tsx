@@ -122,7 +122,8 @@ export function NewJobDialog({
                   label="작업 종류"
                   hint={recipe?.lock ? `앱 잠금: ${lockLabel(recipe.lock)}. 같은 앱을 쓰는 작업은 한 번에 하나씩 실행됩니다.` : undefined}
                 >
-                  <Select value={recipe?.id} onChange={(_, d) => setPicked(d.value)}>
+                  {/* Mounted after the recipes load, so it takes focus from the drawer's X button. */}
+                  <Select autoFocus value={recipe?.id} onChange={(_, d) => setPicked(d.value)}>
                     {options.map((r) => (
                       <option key={r.id} value={r.id}>
                         {r.name}

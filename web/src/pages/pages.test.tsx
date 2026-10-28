@@ -522,6 +522,7 @@ describe("pages", () => {
     expect(await screen.findByRole("radio", { name: "Claude Code" })).toBeTruthy();
     expect(screen.queryByRole("radio", { name: "Codex" })).toBeNull();
     const recipe = screen.getByLabelText(/작업 종류/) as HTMLSelectElement;
+    await waitFor(() => expect(document.activeElement).toBe(recipe));
     expect([...recipe.options].map((o) => o.value)).toEqual(["model3d", "quote", "free"]);
 
     fireEvent.change(recipe, { target: { value: "free" } });
