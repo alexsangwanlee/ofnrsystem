@@ -157,7 +157,7 @@ function SettingsForm({ saved, onSaved }: { saved: SettingsDto; onSaved: (d: Set
             <Field label="회사 양식 폴더" hint="견적서, 제안서 양식 파일을 두는 곳입니다." validationMessage={val.message("templatesDir")}>
               <Input {...text("templatesDir")} />
             </Field>
-            <Field label="백업 폴더" hint="데이터베이스를 하루 한 번 백업하고 최근 14개를 남깁니다." validationMessage={val.message("backupsDir")}>
+            <Field label="백업 폴더" hint="데이터베이스와 스킬, 회사 양식, 설정 파일을 하루 한 번 백업하고 최근 14개를 남깁니다. PC가 고장 나도 남도록 OneDrive나 NAS 폴더를 지정해 주세요." validationMessage={val.message("backupsDir")}>
               <Input {...text("backupsDir")} />
             </Field>
             <Field

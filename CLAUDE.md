@@ -39,7 +39,7 @@ scripts/                setup.ps1(대표 PC 준비), publish-sidecar.ps1, dev.sh
 - 업데이트: `check()`, `download()`, `invoke("stop_backend")`, `install()` 순서. 실행 중인 작업이 있으면 설정 화면이 업데이트를 막는다.
 - 창을 닫으면 숨기기만 한다. 트레이의 종료로 끝내면 사이드카도 같이 끝난다(작업 개체라 claude, codex 자식까지). 그래서 `POST /api/open`은 파일과 폴더를 `explorer.exe`에 넘긴다. 서버가 직접 ShellExecute로 열면 Excel이나 Illustrator가 작업 개체 안에서 떠서 종료나 업데이트 때 저장하지 않은 채 꺼진다.
 
-데이터: `C:\OFNR` (Windows), `~/.ofnr` (그 밖), 환경 변수 `OFNR_DATA`로 바꾼다. `settings.json`, `secrets\*.bin`(DPAPI), `mcp.json`, `recipes.json`, `claude-plugin\`(git 기록), `jobs\`, `templates\`, `backups\`, `tools\`(MCP 서버), `.shipped\`(지금 버전이 배포한 recipes.json과 claude-plugin, 업데이트 때 비교용).
+데이터: `C:\OFNR` (Windows), `~/.ofnr` (그 밖), 환경 변수 `OFNR_DATA`로 바꾼다. `settings.json`, `secrets\*.bin`(DPAPI), `mcp.json`, `recipes.json`, `claude-plugin\`(git 기록), `jobs\`, `templates\`, `backups\`(DB 덤프, 그리고 스킬, 양식, 설정 파일 zip), `tools\`(MCP 서버), `.shipped\`(지금 버전이 배포한 recipes.json과 claude-plugin, 업데이트 때 비교용).
 
 ## 명령
 

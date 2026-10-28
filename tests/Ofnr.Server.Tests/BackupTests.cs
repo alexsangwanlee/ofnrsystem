@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.AspNetCore.TestHost;
@@ -59,6 +60,27 @@ public sealed class BackupTests
         Assert.Equal([made, .. Enumerable.Range(1, 13).Select(i => $"ofnr-old{i:00}.dump")],
             Directory.GetFiles(dir, "ofnr-*.dump").Select(Path.GetFileName).Order(StringComparer.Ordinal));
         Assert.True(File.Exists(Path.Combine(dir, "notes.txt")));
+    }
+
+    [Fact]
+    public async Task Backup_zips_skills_templates_and_config_but_not_secrets()
+    {
+        var dump = new FakeDump();
+        var (backup, dir) = Create(dump);
+        foreach (var f in new[] { "claude-plugin/skills/quote/SKILL.md", "claude-plugin/.git/HEAD", "templates/QUOTE.xlsx", "recipes.json", "mcp.json", "secrets/db.bin" })
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(Path.Combine(data, f))!);
+            File.WriteAllText(Path.Combine(data, f), f);
+        }
+        for (var i = 1; i <= 15; i++) Old(dir, $"ofnr-old{i:00}.zip", TimeSpan.FromDays(i + 1));
+
+        await backup.RunOnceAsync("daily", Ct);
+
+        using (var zip = ZipFile.OpenRead(Path.ChangeExtension(Assert.Single(dump.Files), ".zip")))
+            Assert.Equal(["claude-plugin/.git/HEAD", "claude-plugin/skills/quote/SKILL.md", "mcp.json", "recipes.json", "settings.json", "templates/QUOTE.xlsx"],
+                zip.Entries.Select(e => e.FullName).Order(StringComparer.Ordinal));
+        Assert.Equal(14, Directory.GetFiles(dir, "ofnr-*.zip").Length);
+        Assert.True(backup.Health.Ok);
     }
 
     [Fact]

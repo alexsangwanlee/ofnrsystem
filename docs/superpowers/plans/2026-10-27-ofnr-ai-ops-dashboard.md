@@ -79,7 +79,7 @@ src/Ofnr.Server/
   Skills/SkillStore.cs                list/read/write SKILL.md, git log/revert in <data>/claude-plugin
   Skills/SkillEndpoints.cs
   Ops/Health.cs                       engine versions, login status, db, mail, MCP config, paths
-  Ops/Backup.cs                       daily pg_dump with 14-day retention
+  Ops/Backup.cs                       daily pg_dump and a zip of skills, templates and config, 14-day retention
   Ops/Bootstrap.cs                    first run: create data dirs, copy plugin/recipes/templates if missing
   Realtime/OpsHub.cs                  SignalR hub + IOpsNotifier
 config/recipes.json                   default recipes (copied to <data> on first run)
@@ -331,7 +331,7 @@ SignalR hub `/hubs/ops`, server-to-client methods: `jobUpdated(JobDto)`, `jobEve
 - Produces: `POST /api/health/engine-check/{engine}`: runs a one-turn `free` job without a project whose instruction asks the engine to call `mcp__ofnr__report_progress` with `엔진 점검 완료`; the check passes when that progress event arrives and the run succeeds (catches openai/codex#24135 and login problems). Health stores the last result per engine.
 - Produces: `Health` checks: db; mail (configured, last sync time, last error); engines (`<exe> --version` with 10s timeout, pinned comparison; `codex login status` exit code for `loggedIn`); MCP (`<data>/mcp.json` parse, list names); paths (ASCII check for `JobsRoot` and `ProjectsRoot`, `ProjectsRoot` writable); git on PATH.
 - Produces: startup order in `Program.cs`: if `GetPendingMigrationsAsync()` is not empty and the database already has applied migrations, run one backup first (`Backup.RunOnceAsync("pre-migrate")`), then `MigrateAsync()`.
-- Produces: `Backup` (`BackgroundService`): at start and every 6 hours, if the newest `<BackupsDir>/ofnr-*.dump` is older than 24 hours, runs `pg_dump -Fc -f <BackupsDir>/ofnr-<yyyyMMdd-HHmm>.dump <connection>` (password via `PGPASSWORD` env, never on the command line) and deletes dumps beyond the 14 newest.
+- Produces: `Backup` (`BackgroundService`): at start and every 6 hours, if the newest `<BackupsDir>/ofnr-*.dump` is older than 24 hours, runs `pg_dump -Fc -f <BackupsDir>/ofnr-<yyyyMMdd-HHmm>.dump <connection>` (password via `PGPASSWORD` env, never on the command line) then zips `<PluginDir>`, `<TemplatesDir>`, `settings.json`, `recipes.json` and `mcp.json` (never `secrets`) to `ofnr-<yyyyMMdd-HHmm>.zip` beside it (a zip failure shows in health and keeps the dump), and deletes dumps and zips beyond the 14 newest of each.
 - Modify `src/Ofnr.Server/Jobs/Approvals.cs` so `CreateQuestionAsync` stores Title and Detail in the AttentionDto question format of the API Contract (test: `Question_detail_is_json_with_question_and_options`).
 - Produces: `/api/today` attention list = pending approvals (with `approvalKind`), jobs in `Review`, `Failed`, `NeedsAttention`; unsorted mail = `New` or `NeedsReply` without project, newest 20; upcoming = project dates (install/open/end/teardown) within 14 days, sorted.
 

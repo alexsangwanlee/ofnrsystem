@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.IO.Compression;
 using Npgsql;
 using Ofnr.Server.Mail;
 
@@ -39,7 +40,7 @@ public sealed class PgDumpRunner(SettingsStore settings, SecretStore secrets) : 
     }
 }
 
-/// <summary>At start and every 6 hours, dumps the database when the newest dump is a day old, and keeps the 14 newest.</summary>
+/// <summary>At start and every 6 hours, dumps the database when the newest dump is a day old, zips the files beside it, and keeps the 14 newest of each.</summary>
 public sealed class Backup(SettingsStore settings, IDumpRunner dump, ILogger<Backup> logger) : BackgroundService
 {
     const int Keep = 14;
@@ -49,12 +50,13 @@ public sealed class Backup(SettingsStore settings, IDumpRunner dump, ILogger<Bac
 
     public CheckDto Health => lastError is null ? new("백업", true, settings.Current.BackupsDir) : new("백업", false, lastError);
 
-    /// <summary>Dumps now to <c>ofnr-&lt;yyyyMMdd-HHmm&gt;.dump</c>; a failure leaves no partial file and shows in <see cref="Health"/>.</summary>
+    /// <summary>Dumps now to <c>ofnr-&lt;yyyyMMdd-HHmm&gt;.dump</c> and zips the files a dump lacks to the same name; a failure leaves no partial file and shows in <see cref="Health"/>.</summary>
     /// <param name="label">Why, for the log: daily or pre-migrate.</param>
     public async Task RunOnceAsync(string label, CancellationToken ct = default)
     {
         var dir = settings.Current.BackupsDir;
         var file = Path.Combine(dir, $"ofnr-{DateTime.Now:yyyyMMdd-HHmm}.dump");
+        var zip = Path.ChangeExtension(file, ".zip");
         try
         {
             Directory.CreateDirectory(dir);
@@ -67,20 +69,45 @@ public sealed class Backup(SettingsStore settings, IDumpRunner dump, ILogger<Bac
             lastError = $"데이터베이스를 백업하지 못했습니다: {e.Message}";
             throw;
         }
+        // A zip failure keeps the dump: the pre-migrate backup must not block an update over a locked file.
+        try { ZipFiles(settings.Current, zip); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            if (File.Exists(zip)) File.Delete(zip);
+            lastError = $"스킬과 설정 파일을 백업하지 못했습니다: {e.Message}";
+        }
         logger.LogInformation("Backup ({Label}) written to {File}", label, file);
-        foreach (var old in Dumps(dir).Skip(Keep)) old.Delete();
+        foreach (var old in Newest(dir, "ofnr-*.dump").Skip(Keep).Concat(Newest(dir, "ofnr-*.zip").Skip(Keep))) old.Delete();
+    }
+
+    /// <summary>What a dump lacks: the learned skills with their git history, the templates and the config files. secrets\ stays out, since DPAPI ties it to this PC.</summary>
+    static void ZipFiles(OfnrOptions o, string path)
+    {
+        using var zip = ZipFile.Open(path, ZipArchiveMode.Create);
+        void Add(string file, string name)
+        {
+            // ReadWrite: a template open in Excel, or a file git is writing, still copies.
+            using var src = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            using var dst = zip.CreateEntry(name.Replace('\\', '/')).Open();
+            src.CopyTo(dst);
+        }
+        foreach (var (dir, name) in new[] { (o.PluginDir, "claude-plugin"), (o.TemplatesDir, "templates") })
+            if (Directory.Exists(dir))
+                foreach (var f in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories)) Add(f, Path.Combine(name, Path.GetRelativePath(dir, f)));
+        foreach (var name in new[] { "settings.json", "recipes.json", "mcp.json" })
+            if (File.Exists(Path.Combine(o.DataRoot, name))) Add(Path.Combine(o.DataRoot, name), name);
     }
 
     /// <summary>True when it dumped because the newest dump was older than a day.</summary>
     public async Task<bool> RunIfDueAsync(CancellationToken ct = default)
     {
-        if (Dumps(settings.Current.BackupsDir).FirstOrDefault() is { } newest && DateTime.UtcNow - newest.LastWriteTimeUtc < MaxAge) return false;
+        if (Newest(settings.Current.BackupsDir, "ofnr-*.dump").FirstOrDefault() is { } newest && DateTime.UtcNow - newest.LastWriteTimeUtc < MaxAge) return false;
         await RunOnceAsync("daily", ct);
         return true;
     }
 
-    static IEnumerable<FileInfo> Dumps(string dir) => Directory.Exists(dir)
-        ? new DirectoryInfo(dir).EnumerateFiles("ofnr-*.dump").OrderByDescending(f => f.LastWriteTimeUtc)
+    static IEnumerable<FileInfo> Newest(string dir, string pattern) => Directory.Exists(dir)
+        ? new DirectoryInfo(dir).EnumerateFiles(pattern).OrderByDescending(f => f.LastWriteTimeUtc)
         : [];
 
     protected override async Task ExecuteAsync(CancellationToken stop)

@@ -150,6 +150,8 @@ AI는 메일을 보내지 않습니다. 메일 발송은 언제나 대표가 보
 ## 백업과 복구
 
 - 서버가 하루 한 번 데이터베이스를 `C:\OFNR\backups\ofnr-<날짜-시각>.dump`로 백업하고 최근 14개를 남깁니다. 데이터베이스 구조를 바꾸는 업데이트 직전에도 백업합니다.
+- 같은 이름의 `.zip`에는 학습된 스킬(`claude-plugin`, 변경 이력 포함), 회사 양식(`templates`), `settings.json`, `recipes.json`, `mcp.json`이 들어갑니다. 비밀번호(`secrets`)는 넣지 않습니다.
+- 백업이 이 PC와 함께 사라지지 않도록 설정 > 작업 폴더의 백업 폴더를 OneDrive나 NAS 폴더로 바꿔 두세요.
 - 프로젝트 파일은 OneDrive나 NAS 동기화로 지킵니다.
 - `C:\OFNR\secrets`의 비밀번호는 이 PC의 이 Windows 계정에서만 풀 수 있습니다. 새 PC로 옮기면 `setup.ps1`을 다시 실행하고 메일 앱 비밀번호를 다시 넣어 주세요.
 
@@ -164,7 +166,8 @@ AI는 메일을 보내지 않습니다. 메일 발송은 언제나 대표가 보
    & 'C:\Program Files\PostgreSQL\17\bin\pg_restore.exe' -h 127.0.0.1 -U postgres -d ofnr_ops --clean --if-exists 'C:\OFNR\backups\ofnr-20261027-0300.dump'
    ```
 
-3. 앱을 다시 실행합니다.
+3. 스킬과 설정도 되돌리려면 같은 시각의 `.zip`을 `C:\OFNR`에 풀어 덮어씁니다.
+4. 앱을 다시 실행합니다.
 
 ## 문제 해결
 
