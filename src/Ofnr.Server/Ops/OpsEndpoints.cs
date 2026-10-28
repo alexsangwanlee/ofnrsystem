@@ -70,10 +70,11 @@ public static class OpsEndpoints
                 .Where(j => j.Status == JobStatus.Review || j.Status == JobStatus.Failed
                     || j.Status == JobStatus.NeedsAttention && !db.Approvals.Any(a => a.JobId == j.Id && a.Status == ApprovalStatus.Pending))
                 .OrderByDescending(j => j.UpdatedAt)
-                // Held before its engine started (an app to open, AI files to delete), or stopped by a server restart.
+                // Held before its engine started (an app to open, AI files to delete; a restart keeps the reason), or a run a restart stopped.
                 .Select(j => new AttentionDto(
                     j.Status == JobStatus.Review ? "review" : j.Status == JobStatus.Failed ? "failed"
-                    : db.JobRuns.Where(r => r.JobId == j.Id).OrderByDescending(r => r.Seq).Select(r => r.Status).FirstOrDefault() == RunStatus.Blocked ? "blocked" : "stopped",
+                    : db.JobRuns.Where(r => r.JobId == j.Id).OrderByDescending(r => r.Seq).Select(r => r.Status == RunStatus.Blocked || r.Error != null).FirstOrDefault()
+                        ? "blocked" : "stopped",
                     j.Id, j.Title,
                     db.JobRuns.Where(r => r.JobId == j.Id).OrderByDescending(r => r.Seq).Select(r => r.Error).FirstOrDefault() ?? (j.Result == null ? null : j.Result.Summary),
                     null, null))
