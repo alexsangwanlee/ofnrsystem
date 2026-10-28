@@ -14,7 +14,7 @@ description: 오프너 Word 문서(docx)를 만든다. 계약서 초안, 공문,
 
 | 문서 | 위치와 코드 |
 |---|---|
-| 계약서 초안 | `06_ADMIN`, CONTRACT |
+| 계약서 초안 | `01_PLAN`, CONTRACT |
 | 공문, 기타 | `01_PLAN` 또는 지시한 폴더, DOC |
 | 운영 매뉴얼 | `04_OPS`, OPSMANUAL |
 

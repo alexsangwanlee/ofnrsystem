@@ -51,7 +51,19 @@
     "outputDir": "01_PLAN",
     "untrustedMailInPrompt": false,
     "claude": { "allowedTools": ["Read", "Write", "Edit", "Glob", "Grep", "Skill", "TodoWrite", "mcp__ofnr__*", "Bash"], "disallowedTools": [] },
-    "prompt": "대표의 지시에 맞는 문서(계약서, 공문 등)를 만드세요."
+    "prompt": "대표의 지시에 맞는 문서(공문 등)를 만드세요."
+  },
+  {
+    "id": "contract",
+    "name": "계약서",
+    "stage": "Planning",
+    "skills": ["document"],
+    "engines": ["claude"],
+    "docCode": "CONTRACT",
+    "outputDir": "01_PLAN",
+    "untrustedMailInPrompt": false,
+    "claude": { "allowedTools": ["Read", "Write", "Edit", "Glob", "Grep", "Skill", "TodoWrite", "mcp__ofnr__*", "Bash"], "disallowedTools": [] },
+    "prompt": "계약서 초안을 만드세요."
   },
   {
     "id": "ops-manual",

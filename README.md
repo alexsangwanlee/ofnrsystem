@@ -73,7 +73,8 @@ AI는 메일을 보내지 않습니다. 메일 발송은 언제나 대표가 보
    |---|---|
    | 견적서 | `QUOTE.xlsx` |
    | 제안서 | `PROP.pptx` |
-   | 문서(계약서, 공문) | `DOC.docx` |
+   | 계약서 | `CONTRACT.docx` |
+   | 공문, 기타 문서 | `DOC.docx` |
    | 운영 매뉴얼 | `OPSMANUAL.docx` |
    | 결과보고서 | `REPORT.pptx` |
 

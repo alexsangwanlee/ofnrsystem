@@ -10,7 +10,7 @@ public sealed class RecipeTests
     static readonly string Skills = Path.Combine(AppContext.BaseDirectory, "claude-plugin", "skills");
 
     [Fact]
-    public void Recipes_json_has_eleven_valid_recipes()
+    public void Recipes_json_has_twelve_valid_recipes()
     {
         var catalog = RecipeCatalog.Load(Recipes);
 
@@ -21,6 +21,7 @@ public sealed class RecipeTests
             ("quote", "견적서", ProjectStage.Planning, "QUOTE", "01_PLAN", "office", 30),
             ("proposal", "제안서", ProjectStage.Planning, "PROP", "01_PLAN", "office", 30),
             ("document", "문서", ProjectStage.Planning, "DOC", "01_PLAN", null, 30),
+            ("contract", "계약서", ProjectStage.Planning, "CONTRACT", "01_PLAN", null, 30),
             ("ops-manual", "운영 매뉴얼", ProjectStage.Operation, "OPSMANUAL", "04_OPS", null, 30),
             ("model3d", "3D 모델", ProjectStage.Design, "MODEL", "02_DESIGN/3D", "sketchup", 60),
             ("graphic", "그래픽", ProjectStage.Design, "KV", "02_DESIGN/KV", "illustrator", 60),
@@ -47,7 +48,7 @@ public sealed class RecipeTests
         }
         Assert.Equal(["brief", "free", "reply", "skill-learning"], catalog.All.Where(r => r.Engines.Contains("codex")).Select(r => r.Id).Order());
         // .docx has no MCP server: these write it with the Anthropic docx skill's scripts.
-        Assert.Equal(["document", "ops-manual", "report"], catalog.All.Where(r => r.Claude.AllowedTools.Contains("Bash")).Select(r => r.Id).Order());
+        Assert.Equal(["contract", "document", "ops-manual", "report"], catalog.All.Where(r => r.Claude.AllowedTools.Contains("Bash")).Select(r => r.Id).Order());
         Assert.Equal(["excel"], catalog.Get("quote")!.McpServers);
         Assert.Equal(["sketchup"], catalog.Get("model3d")!.McpServers);
         Assert.Equal(["Read", "Write", "Edit", "Glob", "Grep", "Skill", "TodoWrite", "mcp__ofnr__*"], catalog.Get("brief")!.Claude.AllowedTools);
