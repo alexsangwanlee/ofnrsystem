@@ -311,6 +311,61 @@ public sealed class JobQueueTests
     }
 
     [Fact]
+    public async Task Cancel_that_arrives_after_the_run_ended_keeps_its_result()
+    {
+        await using var h = new JobHost();
+        var id = await h.Job("free");
+        await h.WaitForStatus(id, JobStatus.Review);
+
+        // What the cancel endpoint does when the run ends between its status check and the queue.
+        await h.App.Services.GetRequiredService<JobQueue>().CancelAsync(id);
+
+        Assert.Equal(JobStatus.Review, (await h.Get(id)).Status);
+        Assert.DoesNotContain(await h.Events(id), e => e.Summary == "작업을 중지했습니다.");
+    }
+
+    [Fact]
+    public async Task Learning_jobs_take_turns()
+    {
+        await using var h = new JobHost();
+        var source = await h.Job("free");
+        await h.WaitForStatus(source, JobStatus.Review);
+        h.Agents.Hold = true;
+
+        await h.Send(HttpMethod.Post, $"/api/jobs/{source}/feedback", new { text = "부가세 별도", skillName = "quote" });
+        await h.Send(HttpMethod.Post, $"/api/jobs/{source}/feedback", new { text = "단위는 식", skillName = "quote" });
+        await JobHost.WaitFor(() => h.Agents.Active.Count == 1);
+        h.Agents.ReleaseAll();
+
+        await JobHost.WaitFor(() => h.Agents.Calls.Count == 3 && h.Agents.Active.Count == 0);
+        Assert.Equal(1, h.Agents.MaxActive);
+    }
+
+    [Fact]
+    public async Task Reply_that_saved_no_draft_goes_to_review()
+    {
+        await using var h = new JobHost();
+        var p = await h.Project();
+        var none = await h.Job("reply", p.Id);
+        await h.WaitForStatus(none, JobStatus.Review);
+        h.Agents.Script = (call, ct) =>
+        {
+            using (var db = h.Db())
+            {
+                db.MailDrafts.Add(new MailDraft { ProjectId = p.Id, To = "kim@tnf.co.kr", Subject = "RE: 견적", Body = "초안", Author = "ai" });
+                db.SaveChanges();
+            }
+            return FakeAgents.Default(call, ct);
+        };
+
+        var saved = await h.Job("reply", p.Id);
+
+        await h.WaitForStatus(saved, JobStatus.Done);
+        Assert.Contains(("warning", "회신 초안이 저장되지 않았습니다. 결과를 확인해 주세요."), (await h.Events(none)).Select(e => (e.Kind, e.Summary)));
+        Assert.DoesNotContain(await h.Events(saved), e => e.Kind == "warning");
+    }
+
+    [Fact]
     public async Task Followup_resumes_same_session()
     {
         await using var h = new JobHost();

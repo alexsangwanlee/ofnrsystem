@@ -124,11 +124,15 @@ public sealed class JobRunner(IServiceScopeFactory scopes, SettingsStore setting
             if (before is not null) await RegisterArtifactsAsync(db, job, recipe.DocCode, folder!, before);
             var unrecorded = recipe.Id == "skill-learning" && !await CommitLearningAsync(db, jobId);
             if (unrecorded) await Log("warning", "스킬 변경을 기록하지 못했습니다. 스킬 파일이 바뀌었는지 확인해 주세요.");
+            // A reply skips review because its draft is what the CEO checks; without one he has to look at the job.
+            var noDraft = recipe.Id == "reply"
+                && !await db.MailDrafts.AnyAsync(d => d.Author == "ai" && d.ReplyToMailId == job.MailId && d.CreatedAt >= run.StartedAt);
+            if (noDraft) await Log("warning", "회신 초안이 저장되지 않았습니다. 결과를 확인해 주세요.");
             if (job.Result.Summary.Length > 0) await Log("result", job.Result.Summary);
             // Only this run's questions: one an earlier run left open must not hold every later run back from review.
             var asked = await db.Approvals.AnyAsync(a => a.RunId == run.Id && a.Status == ApprovalStatus.Pending);
             await EndAsync(RunStatus.Done,
-                asked ? JobStatus.NeedsAttention : recipe.Id is "reply" or "skill-learning" && !unrecorded ? JobStatus.Done : JobStatus.Review, null);
+                asked ? JobStatus.NeedsAttention : recipe.Id is "reply" or "skill-learning" && !unrecorded && !noDraft ? JobStatus.Done : JobStatus.Review, null);
             await notifier.Notify("작업이 끝났습니다", job.Title, $"/jobs/{jobId}");
         }
         catch (Exception e)
@@ -190,6 +194,7 @@ public sealed class JobRunner(IServiceScopeFactory scopes, SettingsStore setting
         using var scope = scopes.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<OfnrDb>();
         var job = await db.Jobs.SingleAsync(j => j.Id == jobId);
+        if (job.Status is not (JobStatus.Queued or JobStatus.NeedsAttention)) return; // its run ended just before the cancel got here
         var runs = await db.JobRuns.Where(r => r.JobId == jobId).OrderBy(r => r.Seq).ToListAsync();
         await Approvals.ExpirePendingAsync(db, jobId);
         if (runs.Count > 0) await JobEventLog.AppendAsync(db, notifier, jobId, runs[^1].Id, "system", "작업을 중지했습니다.");

@@ -199,7 +199,8 @@ public sealed class JobQueue(IServiceScopeFactory scopes, SettingsStore settings
             var waiting = new List<string?>();
             foreach (var j in queued.Where(j => !running.ContainsKey(j.Id)))
             {
-                var lockName = recipes.Get(j.RecipeId)?.Lock;
+                // Two learning runs on one SKILL.md would edit it together and commit each other's rule.
+                var lockName = recipes.Get(j.RecipeId)?.Lock ?? (j.RecipeId == "skill-learning" ? "skills" : null);
                 if (running.Count >= Math.Max(1, settings.Current.MaxConcurrentJobs)
                     || lockName is not null && running.Values.Any(a => a.Lock == lockName)
                     || j.Engine == "codex" && running.Values.Any(a => a.Engine == "codex"))
