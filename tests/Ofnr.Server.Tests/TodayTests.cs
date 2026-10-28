@@ -63,6 +63,28 @@ public sealed class TodayTests
     }
 
     [Fact]
+    public async Task A_job_stopped_by_a_restart_is_not_waiting_for_an_app()
+    {
+        await using var host = new TestHost();
+        Job stopped, blocked;
+        using (var scope = host.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<OfnrDb>();
+            stopped = new Job { RecipeId = "free", Title = "멈춘 작업", Status = JobStatus.NeedsAttention };
+            blocked = new Job { RecipeId = "model3d", Title = "3D 모델", Status = JobStatus.NeedsAttention };
+            db.AddRange(stopped, blocked,
+                new JobRun { Job = stopped, Seq = 1, Status = RunStatus.Stopped },
+                new JobRun { Job = blocked, Seq = 1, Status = RunStatus.Blocked, Error = "SketchUp을 열고 MCP Server를 Start 해 주세요." });
+            await db.SaveChangesAsync(Ct);
+        }
+
+        var t = await host.Authed().GetFromJsonAsync<JsonElement>("/api/today", Ct);
+
+        Assert.Equal([(blocked.Id, "blocked"), (stopped.Id, "stopped")], t.GetProperty("attention").EnumerateArray()
+            .Select(a => (a.GetProperty("jobId").GetGuid(), a.GetProperty("kind").GetString())).OrderBy(a => a.Item2));
+    }
+
+    [Fact]
     public async Task Agents_sums_this_month_costs_by_recipe()
     {
         await using var h = new JobHost();

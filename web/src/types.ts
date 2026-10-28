@@ -248,7 +248,7 @@ export interface JobDetailDto {
 }
 
 export interface AttentionDto {
-  kind: "approval" | "review" | "failed" | "blocked";
+  kind: "approval" | "review" | "failed" | "blocked" | "stopped";
   jobId: string;
   title: string;
   detail: string | null;

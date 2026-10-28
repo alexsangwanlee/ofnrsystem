@@ -554,6 +554,18 @@ public sealed class JobQueueTests
     }
 
     [Fact]
+    public async Task Ignoring_the_last_question_leaves_the_result_to_review()
+    {
+        await using var h = new JobHost();
+        var (id, approval) = await AskedJob(h);
+
+        await h.Send(HttpMethod.Post, $"/api/approvals/{approval}/decide", new { decision = "ignore" });
+
+        Assert.Equal(JobStatus.Review, (await h.Get(id)).Status);
+        Assert.Single(h.Agents.Calls, c => c.JobId == id);
+    }
+
+    [Fact]
     public async Task Answer_during_a_run_starts_the_followup_after_it()
     {
         await using var h = new JobHost();

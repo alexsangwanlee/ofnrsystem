@@ -10,12 +10,14 @@ const KIND_LABEL: Record<AttentionDto["kind"], string> = {
   review: "결과물 검토",
   failed: "실패",
   blocked: "앱 준비 필요",
+  stopped: "멈춘 작업",
 };
 const OPEN_LABEL: Record<AttentionDto["kind"], string> = {
   approval: "작업 보기",
   review: "결과 보기",
   failed: "다시 보기",
   blocked: "작업 보기",
+  stopped: "작업 보기",
 };
 const ANSWERED = "답변을 보냈습니다. 같은 작업이 이어서 실행됩니다.";
 const CLOSED = "질문을 닫았습니다.";

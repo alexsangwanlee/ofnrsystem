@@ -131,7 +131,7 @@ public static class JobEndpoints
             return Results.Ok(FeedbackDto.From(feedback));
         });
 
-        app.MapPost("/api/approvals/{id:guid}/decide", async (Approvals approvals, IJobQueue queue, Guid id, DecisionInput input) =>
+        app.MapPost("/api/approvals/{id:guid}/decide", async (OfnrDb db, RecipeCatalog recipes, IOpsNotifier ops, Approvals approvals, IJobQueue queue, Guid id, DecisionInput input) =>
         {
             ApprovalDto dto;
             try { dto = await approvals.DecideAsync(id, input.Decision ?? "", input.Text); }
@@ -140,6 +140,12 @@ public static class JobEndpoints
             catch (InvalidOperationException e) { return Error(409, e.Message); }
             // The answer continues the same engine session; an option the CEO picked arrives as the text.
             if (dto.Decision != "ignore") await queue.FollowupAsync(dto.JobId, $"대표 답변: {(string.IsNullOrWhiteSpace(input.Text) ? "승인" : input.Text.Trim())}");
+            // A closed last question leaves the finished run's result to review, not a job that waits for nothing.
+            else if (await db.Jobs.Where(j => j.Id == dto.JobId && j.Status == JobStatus.NeedsAttention
+                    && !db.Approvals.Any(a => a.JobId == j.Id && a.Status == ApprovalStatus.Pending)
+                    && db.JobRuns.Where(r => r.JobId == j.Id).OrderByDescending(r => r.Seq).Select(r => r.Status).FirstOrDefault() == RunStatus.Done)
+                .ExecuteUpdateAsync(s => s.SetProperty(j => j.Status, JobStatus.Review).SetProperty(j => j.UpdatedAt, DateTimeOffset.UtcNow)) > 0)
+                await ops.JobUpdated(await DtoAsync(db, recipes, dto.JobId));
             return Results.Ok(dto);
         });
     }
