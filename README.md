@@ -131,8 +131,8 @@ AI는 메일을 보내지 않습니다. 메일 발송은 언제나 대표가 보
    ```
 
    `ofnr-ops.key.pub` 파일의 **내용**을 `desktop/src-tauri/tauri.conf.json`의 `plugins.updater.pubkey`에 붙여 넣습니다. 개인 키(`ofnr-ops.key`)와 그 비밀번호는 USB 같은 오프라인 장소에도 백업해 둡니다. 개인 키를 잃어버리면 이미 설치된 앱에 다시는 업데이트를 보낼 수 없습니다.
-2. 설치 파일만 올릴 **공개** 저장소를 GitHub에 만듭니다(예: `ofnr-ops-releases`). README 하나를 커밋해 `main` 브랜치를 만들어 둡니다. 비공개 저장소의 릴리스는 앱이 로그인 없이 읽을 수 없습니다.
-3. `OWNER`를 실제 GitHub 계정 이름으로 바꿉니다. 두 곳입니다: `desktop/src-tauri/tauri.conf.json`의 `plugins.updater.endpoints`, `.github/workflows/release.yml`의 `owner`.
+2. 설치 파일만 올릴 **공개** 저장소 `alexsangwanlee/ofnr-ops-releases`를 GitHub에 만듭니다. README 하나를 커밋해 `main` 브랜치를 만들어 둡니다. 비공개 저장소의 릴리스는 앱이 로그인 없이 읽을 수 없습니다.
+3. 계정이나 저장소 이름을 바꾸면 두 곳을 같이 고칩니다: `desktop/src-tauri/tauri.conf.json`의 `plugins.updater.endpoints`, `.github/workflows/release.yml`의 `owner`와 `repo`.
 4. 이 저장소의 Settings > Secrets and variables > Actions에 비밀 값 세 개를 넣습니다.
    - `TAURI_SIGNING_PRIVATE_KEY`: 개인 키 파일의 내용
    - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`: 개인 키 비밀번호

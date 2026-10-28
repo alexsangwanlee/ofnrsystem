@@ -50,7 +50,7 @@
   "plugins": {
     "updater": {
       "pubkey": "REPLACE_WITH_CONTENT_OF_ofnr-ops.key.pub",
-      "endpoints": ["https://github.com/OWNER/ofnr-ops-releases/releases/latest/download/latest.json"],
+      "endpoints": ["https://github.com/alexsangwanlee/ofnr-ops-releases/releases/latest/download/latest.json"],
       "windows": { "installMode": "passive" }
     }
   }
