@@ -23,12 +23,6 @@
       "command": "C:\\Program Files\\nodejs\\node.exe",
       "args": ["C:\\OFNR\\tools\\node_modules\\illustrator-mcp-server\\dist\\index.js"],
       "env": { "ILLUSTRATOR_MCP_TIMEOUT_NORMAL": "60000", "ILLUSTRATOR_MCP_TIMEOUT_HEAVY": "180000", "TEMP": "C:\\OFNR\\tmp", "TMP": "C:\\OFNR\\tmp" }
-    },
-    "photoshop": {
-      "type": "stdio",
-      "command": "C:\\Program Files\\nodejs\\node.exe",
-      "args": ["C:\\OFNR\\tools\\node_modules\\@alisaitteke\\photoshop-mcp\\dist\\index.js"],
-      "env": { "ANALYTICS_DISABLED": "1", "TEMP": "C:\\OFNR\\tmp", "TMP": "C:\\OFNR\\tmp" }
     }
   }
 }

@@ -83,6 +83,7 @@ Linux 개발 PC에서 .NET은 `export PATH=$HOME/.dotnet:$PATH`가 필요할 수
 2. 쓰는 스킬 폴더가 `claude-plugin/skills/`에 있어야 한다. `tests/Ofnr.Server.Tests/RecipeTests.cs`를 함께 고친다.
 3. 서버는 시작할 때 `config/recipes.json`을 `<data>\recipes.json`으로 가져온다. 파일이 없거나 지난 버전이 배포한 그대로(`<data>\.shipped\`와 같으면)일 때만 바꾸고, 대표가 고친 파일은 그대로 둔다.
 4. Codex를 허용하려면 대표 PC에서 그 레시피가 Codex로 도는지 엔진 점검으로 확인한 뒤 `engines`에 `codex`를 더한다.
+5. 포토샵 MCP(`@alisaitteke/photoshop-mcp` 1.7.37, `ANALYTICS_DISABLED=1`)는 쓰는 레시피가 없어 설치하지 않는다. 포토샵 레시피를 만들 때 `config/mcp.example.json`과 `scripts/setup.ps1`에 되살리고 README의 도구 목록에 더한다.
 
 ### 스킬
 

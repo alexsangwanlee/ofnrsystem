@@ -186,7 +186,7 @@ Ok "설정 파일 $settingsPath"
 Say ''
 Say '[3/4] 외부 도구(MCP) 설치'
 if (Has 'npm') {
-  & npm install --prefix $tools --no-audit --no-fund illustrator-mcp-server@1.10.3 '@alisaitteke/photoshop-mcp@1.7.37' | Out-Host
+  & npm install --prefix $tools --no-audit --no-fund illustrator-mcp-server@1.10.3 | Out-Host
 }
 $dotnetTools = @{ 'sbroenne.excelmcp.mcpserver' = '2.5.6'; 'sbroenne.powerpointmcp.mcpserver' = '0.3.4' }
 if (Has 'dotnet') {
