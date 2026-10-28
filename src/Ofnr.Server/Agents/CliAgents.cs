@@ -110,7 +110,7 @@ public abstract class CliAgent(string name, string exe, string workDir, IReadOnl
                 using var doc = TryParse(line);
                 if (doc is null)
                 {
-                    var bad = Warning($"엔진 출력 한 줄을 읽지 못했습니다: {(line.Length > 200 ? line[..200] : line)}");
+                    var bad = Warning($"엔진 출력 한 줄을 읽지 못했습니다: {(line.Length > 200 ? line[..(char.IsHighSurrogate(line[199]) ? 199 : 200)] : line)}");
                     bad.AgentId = Id;
                     yield return bad;
                     continue;
@@ -130,7 +130,7 @@ public abstract class CliAgent(string name, string exe, string workDir, IReadOnl
             if (run.Error is not null || p.ExitCode != 0)
             {
                 var message = run.Error ?? $"엔진이 종료 코드 {p.ExitCode}로 끝났습니다.";
-                if (err.Length > 2000) err = err[^2000..];
+                if (err.Length > 2000) err = err[^(char.IsLowSurrogate(err[^2000]) ? 1999 : 2000)..]; // whole surrogate pairs only
                 throw new InvalidOperationException(err.Length == 0 ? message : $"{message}\n{err}");
             }
             if (run.FinalText is not null)

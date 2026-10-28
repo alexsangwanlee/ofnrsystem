@@ -229,7 +229,8 @@ public sealed class JobRunner(IServiceScopeFactory scopes, SettingsStore setting
         }
         catch (JsonException) { }
         json = string.Join(' ', json.Split((char[])['\r', '\n'], StringSplitOptions.RemoveEmptyEntries));
-        return json.Length > 120 ? json[..120] + "…" : json;
+        // Never ends on half a surrogate pair, which PostgreSQL would reject and which would fail the whole run.
+        return json.Length > 120 ? json[..(char.IsHighSurrogate(json[119]) ? 119 : 120)] + "…" : json;
     }
 
     /// <summary>

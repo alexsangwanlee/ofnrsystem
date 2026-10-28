@@ -197,6 +197,24 @@ public sealed class JobQueueTests
     }
 
     [Fact]
+    public async Task A_tool_line_cut_inside_an_emoji_still_saves()
+    {
+        await using var h = new JobHost();
+        var args = "{\"message\":\"" + new string('a', 107) + "😀 끝\"}"; // the emoji's first half at index 119
+        async IAsyncEnumerable<AgentResponseUpdate> Emoji(FakeCall call, [EnumeratorCancellation] CancellationToken ct = default)
+        {
+            yield return new(ChatRole.Assistant, [new AIContent { AdditionalProperties = new() { ["cli.tool"] = "mcp__ofnr__report_progress", ["cli.args"] = args } }]);
+            await foreach (var u in FakeAgents.Default(call, ct)) yield return u;
+        }
+        h.Agents.Script = Emoji;
+
+        var id = await h.Job("free");
+
+        await h.WaitForStatus(id, JobStatus.Review);
+        Assert.Contains(("tool", "mcp__ofnr__report_progress " + args[..119] + "…"), (await h.Events(id)).Select(e => (e.Kind, e.Summary)));
+    }
+
+    [Fact]
     public async Task Job_running_alongside_keeps_its_hands_off_the_other_jobs_artifact()
     {
         await using var h = new JobHost();
