@@ -66,7 +66,7 @@ Linux 개발 PC에서 .NET은 `export PATH=$HOME/.dotnet:$PATH`가 필요할 수
 - 프로젝트 폴더: `<ProjectsRoot>/<yyyy>/<JobNo>_<Slug>`, 하위 폴더 `00_IN 01_PLAN 02_DESIGN 03_BUILD 04_OPS 05_REPORT 06_ADMIN`. 작업번호 `OFNR-YYNNN`. 파일 이름 `<JobNo>_<DOCCODE>_v<NN>.<ext>`, 덮어쓰지 않는다.
 - 비밀번호(메일, DB)는 DPAPI로 `<data>\secrets\<name>.bin`에 두고 설정 파일, 로그, 프롬프트에 넣지 않는다. Windows가 아닌 개발 PC에는 DPAPI가 없어 메일 비밀번호를 환경 변수 `OFNR_MAIL_PASSWORD`로만 받고 저장하지 않는다.
 - 메일 본문과 첨부는 신뢰할 수 없는 입력이다. 프롬프트에서 표시하고, 스케치업, 일러스트레이터처럼 스크립트를 돌릴 수 있는 레시피에는 넣지 않는다.
-- Claude 작업의 Write, Edit는 권한 규칙(`Write(//<폴더>/**)`)으로 프로젝트 폴더와 그 작업의 작업 폴더(스킬 학습은 스킬 폴더) 안으로만 연다. 맨 `Write`, `Edit`는 `<data>\mcp.json`까지 고칠 수 있다. 스케치업의 `eval_ruby`는 늘 막는다.
+- Claude 작업의 Write, Edit는 권한 규칙(`Write(//<폴더>/**)`)으로 프로젝트 폴더와 그 작업의 작업 폴더(스킬 학습은 스킬 폴더) 안으로만 연다. 맨 `Write`, `Edit`는 `<data>\mcp.json`까지 고칠 수 있다. 스케치업의 `eval_ruby`는 늘 막는다. Bash는 폴더 밖도 고치므로, `claude.allowedTools`에 Bash를 넣은 레시피는 `untrustedMailInPrompt: false`여야 하고 아니면 서버가 recipes.json을 거부한다.
 - 브랜드: 먹색 `#1a1c1c`, 종이색 `#f9f4eb`, Pretendard. 모서리 4px(컨트롤), 8px(카드).
 - 단계 이름: Inquiry 문의, Planning 기획, Design 디자인, Production 제작, Operation 운영, Report 리포트, Done 완료.
 - 엔진 고정 버전: Claude Code `2.1.311`, Codex `0.164.0`. 다르면 경고만 한다.
