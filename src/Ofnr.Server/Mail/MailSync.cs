@@ -93,7 +93,9 @@ public sealed class MailSync(IServiceScopeFactory scopes, SettingsStore settings
             var sent = await SentFolderAsync(imap, account);
             var added = await SyncFolderAsync(db, imap, "INBOX", outgoing: false, ct);
             if (sent is not null) added += await SyncFolderAsync(db, imap, sent, outgoing: true, ct);
-            last = new("메일", true, $"마지막 동기화 {DateTimeOffset.Now:yyyy-MM-dd HH:mm}");
+            // Without it, replies sent elsewhere never reach the threads and a sent copy is not appended.
+            last = sent is null ? new("메일", false, "보낸메일함을 찾지 못했습니다. 설정 > 메일의 '보낸메일함 이름'에 NAVER WORKS에 보이는 이름을 입력해 주세요.")
+                : new("메일", true, $"마지막 동기화 {DateTimeOffset.Now:yyyy-MM-dd HH:mm}");
             return added;
         }
         catch (Exception e) when (!ct.IsCancellationRequested)

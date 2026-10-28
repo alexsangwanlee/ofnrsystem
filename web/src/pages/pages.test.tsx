@@ -790,6 +790,24 @@ describe("pages", () => {
     await waitFor(() => expect(calls.find((c) => c.method === "PUT")?.body).toMatchObject({ pgDumpPath }));
   });
 
+  it("Settings_mail_test_saves_the_typed_account_first", async () => {
+    const address = "new@ofnr.co.kr";
+    const calls = mockApi({
+      "GET /api/settings": settingsDto,
+      "PUT /api/settings": { ...settingsDto, mail: { ...settingsDto.mail, address } },
+      "POST /api/settings/mail-test": { name: "메일", ok: true, detail: null },
+    });
+    renderAt(<Settings />);
+
+    fireEvent.change(await screen.findByLabelText(/메일 주소/), { target: { value: address } });
+    fireEvent.click(screen.getByRole("button", { name: "연결 확인" }));
+
+    expect(await screen.findByText("메일 서버에 연결했습니다.")).toBeTruthy();
+    const writes = calls.filter((c) => c.method !== "GET");
+    expect(writes.map((c) => c.path)).toEqual(["/api/settings", "/api/settings/mail-test"]);
+    expect(writes[0].body).toMatchObject({ mail: { address } });
+  });
+
   it("Settings_engine_check_updates_the_row", async () => {
     const calls = mockApi({
       "GET /api/settings": settingsDto,

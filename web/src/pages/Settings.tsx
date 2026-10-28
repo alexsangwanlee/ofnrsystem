@@ -126,15 +126,17 @@ function SettingsForm({ saved, onSaved }: { saved: SettingsDto; onSaved: (d: Set
       setForm(form && { ...form, autoTriage: d.autoTriage, appendSentCopy: d.appendSentCopy });
       setNote(message);
     });
-  const submit = () => {
-    if (val.check()) void put(v, "저장했습니다.").then((ok) => ok && setForm(undefined));
+  const submit = async () => {
+    const ok = val.check() && (await put(v, "저장했습니다."));
+    if (ok) setForm(undefined);
+    return ok;
   };
   // Switches save at once, without the unsaved field edits around them.
   const toggle = (patch: Partial<SettingsDto>) => void put({ ...saved, ...patch }, "저장했습니다.");
 
   const footer = (
     <div className={ui.actions}>
-      <Button appearance="primary" disabled={save.busy} onClick={submit}>
+      <Button appearance="primary" disabled={save.busy} onClick={() => void submit()}>
         변경 저장
       </Button>
       {note && <Caption1 aria-live="polite">{note}</Caption1>}
@@ -221,19 +223,21 @@ function SettingsForm({ saved, onSaved }: { saved: SettingsDto; onSaved: (d: Set
               <Input type="number" min={1} {...text("mailSyncMinutes")} />
             </Field>
             {footer}
-            <MailPassword />
+            <MailPassword saveFirst={form && submit} />
             <Switch
               label="새 메일을 AI가 자동으로 분류"
               checked={v.autoTriage}
               disabled={save.busy}
               onChange={(_, d) => toggle({ autoTriage: d.checked })}
             />
-            <Switch
-              label="보낸 메일 사본을 보낸메일함에 저장"
-              checked={v.appendSentCopy}
-              disabled={save.busy}
-              onChange={(_, d) => toggle({ appendSentCopy: d.checked })}
-            />
+            <Field hint="답장을 한 번 보낸 뒤 NAVER WORKS 보낸메일함에 없을 때만 켜 주세요. 이미 저장되는데 켜면 두 번 저장됩니다.">
+              <Switch
+                label="보낸 메일 사본을 보낸메일함에 저장"
+                checked={v.appendSentCopy}
+                disabled={save.busy}
+                onChange={(_, d) => toggle({ appendSentCopy: d.checked })}
+              />
+            </Field>
           </div>
         </Section>
       </div>
@@ -241,7 +245,8 @@ function SettingsForm({ saved, onSaved }: { saved: SettingsDto; onSaved: (d: Set
   );
 }
 
-function MailPassword() {
+/** `saveFirst` is the form's save while it has unsaved edits: 연결 확인 tests the saved account. */
+function MailPassword({ saveFirst }: { saveFirst?: () => Promise<boolean> }) {
   const ui = useUi();
   const [password, setPassword] = useState("");
   const [missing, setMissing] = useState(false);
@@ -257,8 +262,10 @@ function MailPassword() {
       setNote("비밀번호를 저장했습니다.");
     });
   };
-  const testMail = () =>
+  const testMail = async () => {
+    if (saveFirst && !(await saveFirst())) return; // the form shows the invalid field or the save error
     void run(async () => setTest(await api<CheckDto>("/api/settings/mail-test", { method: "POST" })));
+  };
 
   return (
     <div className={ui.section}>
@@ -282,7 +289,7 @@ function MailPassword() {
         <Button disabled={busy} onClick={savePassword}>
           비밀번호 저장
         </Button>
-        <Button disabled={busy} onClick={testMail}>
+        <Button disabled={busy} onClick={() => void testMail()}>
           연결 확인
         </Button>
         {note && <Caption1 aria-live="polite">{note}</Caption1>}

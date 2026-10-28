@@ -23,6 +23,9 @@ public sealed class FakeImap : IImapSource
     public List<(string Folder, uint After, DateTimeOffset? Since)> Searches { get; } = [];
     public List<(string Folder, MimeMessage Message)> Appended { get; } = [];
 
+    /// <summary>No \Sent attribute, as on a server without SPECIAL-USE: the Sent folder is found by its name.</summary>
+    public List<(string Name, bool IsSent)> Folders { get; set; } = [("INBOX", false), ("보낸메일함", false), ("스팸메일함", false)];
+
     public void Put(string folder, uint uid, MimeMessage m)
     {
         lock (folders) folders[folder][uid] = m;
@@ -37,8 +40,7 @@ public sealed class FakeImap : IImapSource
     {
         Interlocked.Increment(ref lists);
         if (Fail is not null) throw Fail;
-        // No \Sent attribute, as on a server without SPECIAL-USE: the Sent folder is found by its name.
-        return Task.FromResult<IReadOnlyList<(string, bool)>>([("INBOX", false), ("보낸메일함", false), ("스팸메일함", false)]);
+        return Task.FromResult<IReadOnlyList<(string, bool)>>([.. Folders]);
     }
 
     public Task<FolderInfo> OpenAsync(string folder)
@@ -260,6 +262,19 @@ public sealed class MailSyncTests
         Assert.Equal(50, (await rig.Rows()).Count);
         Assert.Equal(50, rig.Notifier.Calls.OfType<MailSummaryDto>().Count());
         Assert.Equal(50L, (await rig.State("INBOX")).LastUid);
+    }
+
+    [Fact]
+    public async Task Missing_sent_folder_syncs_inbox_and_shows_in_health()
+    {
+        using var rig = new Rig();
+        rig.Imap.Folders = [("INBOX", false), ("Sent Messages", false)];
+        rig.Imap.Put("INBOX", 1, Msg("a@tnf.co.kr", "견적 요청"));
+
+        Assert.Equal(1, await rig.Sync.SyncNowAsync(Ct));
+
+        Assert.Equal(new CheckDto("메일", false, "보낸메일함을 찾지 못했습니다. 설정 > 메일의 '보낸메일함 이름'에 NAVER WORKS에 보이는 이름을 입력해 주세요."), rig.Sync.Health);
+        Assert.DoesNotContain(rig.Imap.Searches, s => s.Folder != "INBOX");
     }
 
     [Fact]
