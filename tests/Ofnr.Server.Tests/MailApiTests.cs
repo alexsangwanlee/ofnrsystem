@@ -76,6 +76,24 @@ public sealed class MailApiTests
         Assert.Equal("메일을 찾을 수 없습니다.", Error(await h.Send(HttpMethod.Post, $"/api/mail/{Guid.NewGuid()}/link", new { projectId = p.Id }, HttpStatusCode.NotFound)));
         Assert.Equal("Done", (await h.Send(HttpMethod.Post, $"/api/mail/{mail.Id}/status", new { status = "Done" })).GetProperty("status").GetString());
         await h.Send(HttpMethod.Post, $"/api/mail/{mail.Id}/status", new { status = "Nope" }, HttpStatusCode.BadRequest);
+        // Linking again leaves a replied mail done.
+        Assert.Equal("Done", (await h.Send(HttpMethod.Post, $"/api/mail/{mail.Id}/link", new { projectId = p.Id })).GetProperty("status").GetString());
+    }
+
+    [Fact]
+    public async Task Linking_a_mail_that_needs_a_reply_keeps_it_in_the_reply_list()
+    {
+        await using var h = Host();
+        var p = await h.Project();
+        var linked = await AddMail(h, "견적 요청", edit: m => m.Status = MailStatus.NeedsReply);
+        var created = await AddMail(h, "새 문의", edit: m => m.Status = MailStatus.NeedsReply);
+
+        await h.Send(HttpMethod.Post, $"/api/mail/{linked.Id}/link", new { projectId = p.Id });
+        await h.Send(HttpMethod.Post, $"/api/mail/{created.Id}/create-project", new { name = "새 문의 프로젝트" });
+
+        var replies = (await h.Send(HttpMethod.Get, "/api/mail?status=NeedsReply")).EnumerateArray().ToList();
+        Assert.Equal([linked.Id, created.Id], replies.Select(m => m.GetProperty("id").GetGuid()).Order());
+        Assert.All(replies, m => Assert.NotEqual(JsonValueKind.Null, m.GetProperty("projectId").ValueKind));
     }
 
     [Fact]
@@ -93,6 +111,26 @@ public sealed class MailApiTests
     }
 
     [Fact]
+    public async Task Create_project_from_a_client_mail_learns_the_client_domain()
+    {
+        await using var h = Host();
+        Settings(h).Mail.Address = "ceo@ofnr.co.kr";
+        async Task<string[]> DomainsAfter(Action<MailMessage> edit)
+        {
+            var client = (await h.Send(HttpMethod.Post, "/api/clients", new { name = "TNF", mailDomains = Array.Empty<string>() })).GetProperty("id").GetGuid();
+            var mail = await AddMail(h, "견적 요청", edit: edit);
+            await h.Send(HttpMethod.Post, $"/api/mail/{mail.Id}/create-project", new { name = "TNF 팝업", clientId = client });
+            await using var db = h.Db();
+            return (await db.Clients.SingleAsync(c => c.Id == client, Ct)).MailDomains;
+        }
+
+        Assert.Equal(["tnf.co.kr"], await DomainsAfter(m => m.FromAddress = "Kim@TNF.co.kr"));
+        Assert.Empty(await DomainsAfter(m => m.FromAddress = "kim@gmail.com"));
+        Assert.Empty(await DomainsAfter(m => m.FromAddress = "pm@ofnr.co.kr"));
+        Assert.Empty(await DomainsAfter(m => (m.Outgoing, m.FromAddress) = (true, "kim@tnf.co.kr")));
+    }
+
+    [Fact]
     public async Task Save_attachment_writes_into_00_IN()
     {
         await using var h = Host();
@@ -101,6 +139,9 @@ public sealed class MailApiTests
         var evil = new BodyBuilder { TextBody = "x" };
         ((MimePart)evil.Attachments.Add("a.txt", "a"u8.ToArray())).FileName = @"../..\악성.txt";
         imap.Put("INBOX", 43, new MimeMessage { Body = evil.ToMessageBody() });
+        var device = new BodyBuilder { TextBody = "x" };
+        device.Attachments.Add("CON.pdf", "%PDF"u8.ToArray());
+        imap.Put("INBOX", 45, new MimeMessage { Body = device.ToMessageBody() });
         var mail = await AddMail(h, "견적 요청드립니다", edit: m => (m.Uid, m.ProjectId) = (42, p.Id));
         var traversal = await AddMail(h, "첨부", edit: m => (m.Uid, m.ProjectId) = (43, p.Id));
 
@@ -111,6 +152,8 @@ public sealed class MailApiTests
         Assert.Equal("00_IN/도면_2.pdf", second.GetProperty("relativePath").GetString());
         Assert.Equal("%PDF-1.4 test", File.ReadAllText(Path.Combine(p.Folder, "00_IN", "도면.pdf")));
         Assert.Equal("00_IN/악성.txt", (await h.Send(HttpMethod.Post, $"/api/mail/{traversal.Id}/attachments/0/save")).GetProperty("relativePath").GetString());
+        var con = await AddMail(h, "장치 이름", edit: m => (m.Uid, m.ProjectId) = (45, p.Id));
+        Assert.Equal("00_IN/_CON.pdf", (await h.Send(HttpMethod.Post, $"/api/mail/{con.Id}/attachments/0/save")).GetProperty("relativePath").GetString());
         await h.Send(HttpMethod.Post, $"/api/mail/{mail.Id}/attachments/1/save", expected: HttpStatusCode.NotFound);
         var unlinked = await AddMail(h, "미분류");
         Assert.Equal("먼저 메일을 프로젝트에 연결해 주세요.", Error(await h.Send(HttpMethod.Post, $"/api/mail/{unlinked.Id}/attachments/0/save", expected: HttpStatusCode.BadRequest)));

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using MailKit;
 using Microsoft.EntityFrameworkCore;
 using MimeKit;
@@ -9,12 +10,16 @@ using Activity = Ofnr.Server.Data.Activity;
 
 namespace Ofnr.Server.Mail;
 
-public static class MailEndpoints
+public static partial class MailEndpoints
 {
     static readonly JsonElement EmptyObject = JsonElement.Parse("{}");
 
     // One send at a time, so a double click cannot reach the client twice.
     static readonly SemaphoreSlim SendLock = new(1, 1);
+
+    // Senders on these domains are people, not one company, so their domain never identifies a client.
+    static readonly HashSet<string> Webmail =
+        ["naver.com", "gmail.com", "daum.net", "hanmail.net", "kakao.com", "nate.com", "hotmail.com", "outlook.com", "live.com", "icloud.com", "yahoo.com"];
 
     public static IQueryable<MailSummaryDto> ToSummaries(this IQueryable<MailMessage> q) => q.Select(m => new MailSummaryDto(
         m.Id, m.FromName, m.FromAddress, m.Subject, m.ReceivedAt, m.Status, m.Category, m.Summary,
@@ -92,6 +97,10 @@ public static class MailEndpoints
                 Directory.CreateDirectory(dir);
                 var (path, stream) = CreateUnique(dir, SafeFileName(MailMapper.FileName(attachments[index])));
                 using (stream) MailMapper.Decode(attachments[index], stream);
+                // Mark of the Web, so Office opens a client file in Protected View as it would from Outlook.
+                if (OperatingSystem.IsWindows())
+                    try { File.WriteAllText(path + ":Zone.Identifier", "[ZoneTransfer]\r\nZoneId=3\r\n"); }
+                    catch (Exception e) when (e is IOException or UnauthorizedAccessException) { } // a drive or share without NTFS streams
                 var file = new FileInfo(path);
                 return Results.Ok(new FileDto(Path.GetRelativePath(project.FolderPath, path).Replace('\\', '/'), file.Length, file.LastWriteTimeUtc, null, null));
             }
@@ -106,6 +115,11 @@ public static class MailEndpoints
             try { p = await ProjectEndpoints.CreateAsync(db, settings.Current, input); }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return ProjectEndpoints.FolderFailed(e); }
             Link(db, m, p.Id);
+            // Follow-up mail matches by the client's mail domain (spec), and no screen sets one, so the inquiry's sender teaches it.
+            var own = settings.Current.Mail.Address?.Split('@') is [_, var od] ? od.ToLowerInvariant() : null;
+            if (!m.Outgoing && m.FromAddress.Split('@') is [_, var raw] && raw.ToLowerInvariant() is var domain && domain != own && !Webmail.Contains(domain)
+                && p.ClientId is { } clientId && await db.Clients.FindAsync(clientId) is { } client && !client.MailDomains.Contains(domain))
+                client.MailDomains = [.. client.MailDomains, domain]; // a new array, so EF sees the text[] change
             await db.SaveChangesAsync();
             var dto = await ProjectEndpoints.DtoAsync(db, p.Id);
             await ops.ProjectUpdated(dto);
@@ -146,7 +160,8 @@ public static class MailEndpoints
 
     static void Link(OfnrDb db, MailMessage m, Guid projectId)
     {
-        (m.ProjectId, m.Status) = (projectId, MailStatus.Linked);
+        m.ProjectId = projectId;
+        if (m.Status == MailStatus.New) m.Status = MailStatus.Linked; // 답장 필요 stays until the reply is sent, and a replied mail stays done
         db.Activities.Add(new Activity { ProjectId = projectId, Kind = "mail", Text = $"메일을 연결했습니다: {m.Subject}" });
     }
 
@@ -174,12 +189,17 @@ public static class MailEndpoints
         return Results.Ok(MailDraftDto.From(d));
     }
 
-    /// <summary>The attachment's own name, Korean kept: no path separators, no characters Windows forbids, no leading or trailing dots.</summary>
+    /// <summary>The attachment's own name, Korean kept: no path separators, no characters Windows forbids, no leading or trailing dots, no device name.</summary>
     static string SafeFileName(string name)
     {
         var kept = new string([.. name.Where(c => !char.IsControl(c) && !@"\/:*?""<>|".Contains(c))]).Trim().Trim('.', ' ');
-        return kept.Length == 0 ? "첨부 파일" : kept;
+        if (kept.Length == 0) return "첨부 파일";
+        // Windows 10 opens CON.pdf or NUL.xlsx as the device, not a file.
+        return DeviceName().IsMatch(kept.Split('.')[0].TrimEnd()) ? "_" + kept : kept;
     }
+
+    [GeneratedRegex(@"^(CON|PRN|AUX|NUL|CONIN\$|CONOUT\$|COM[0-9¹²³]|LPT[0-9¹²³])$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex DeviceName();
 
     /// <summary>A new file: name.ext, else name_2.ext, name_3.ext and so on. Never overwrites.</summary>
     static (string Path, FileStream Stream) CreateUnique(string dir, string fileName)

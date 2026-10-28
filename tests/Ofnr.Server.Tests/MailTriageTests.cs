@@ -122,8 +122,8 @@ public sealed class MailTriageTests
         Assert.Equal(("TNF", "팝업스토어", "30평", JsonValueKind.Null, "예산"),
             (x.GetProperty("brand").GetString(), x.GetProperty("project_type").GetString(), x.GetProperty("area").GetString(),
                 x.GetProperty("budget").ValueKind, x.GetProperty("missing_fields")[0].GetString()));
-        // A mail already linked to a project keeps its status.
-        Assert.Equal(MailStatus.Linked, (await rig.Mail(linked)).Status);
+        // Client mail on a project still needs a reply.
+        Assert.Equal(MailStatus.NeedsReply, (await rig.Mail(linked)).Status);
         // The job number in the subject beats the engine's guess.
         var n = await rig.Mail(numbered);
         Assert.Equal((p2, 1.0, MailStatus.New), (n.SuggestedProjectId, n.SuggestedConfidence, n.Status));

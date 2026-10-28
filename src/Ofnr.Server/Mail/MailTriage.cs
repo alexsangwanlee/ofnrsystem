@@ -148,7 +148,8 @@ public sealed partial class MailTriage(IServiceScopeFactory scopes, SettingsStor
                 (m.SuggestedProjectId, m.SuggestedConfidence) = MailMapper.MatchProject(m, matchable) is { } sure ? (sure, 1.0)
                     : Guid.TryParse(item.SuggestedProjectId, out var pick) && active.Any(p => p.Id == pick) ? (pick, Math.Clamp(item.Confidence, 0, 1))
                     : ((Guid?)null, (double?)null);
-                if (item.NeedsReply && m.Status == MailStatus.New) m.Status = MailStatus.NeedsReply;
+                // Client mail on a project is linked at sync and still needs an answer; a replied or closed mail stays done.
+                if (item.NeedsReply && m.Status is MailStatus.New or MailStatus.Linked) m.Status = MailStatus.NeedsReply;
                 changed.Add(id);
             }
             await db.SaveChangesAsync(ct);
