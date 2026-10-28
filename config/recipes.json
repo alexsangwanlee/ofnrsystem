@@ -27,7 +27,7 @@
     "engines": ["claude"],
     "docCode": "QUOTE",
     "outputDir": "01_PLAN",
-    "prompt": "견적서를 만드세요. 단가와 수량은 지어내지 말고 모르면 확인 필요로 남기세요."
+    "prompt": "견적서를 엑셀 MCP 도구(mcp__excel__*)로 만드세요. 단가와 수량은 지어내지 말고 모르면 확인 필요로 남기세요."
   },
   {
     "id": "proposal",
@@ -39,7 +39,7 @@
     "engines": ["claude"],
     "docCode": "PROP",
     "outputDir": "01_PLAN",
-    "prompt": "제안서를 만드세요."
+    "prompt": "제안서를 파워포인트 MCP 도구(mcp__powerpoint__*)로 만드세요."
   },
   {
     "id": "document",
@@ -117,7 +117,7 @@
     "outputDir": "05_REPORT",
     "untrustedMailInPrompt": false,
     "claude": { "allowedTools": ["Read", "Write", "Edit", "Glob", "Grep", "Skill", "TodoWrite", "mcp__ofnr__*", "Bash"], "disallowedTools": [] },
-    "prompt": "결과보고서를 만드세요."
+    "prompt": "결과보고서를 파워포인트 MCP 도구(mcp__powerpoint__*)로 만드세요."
   },
   {
     "id": "skill-learning",

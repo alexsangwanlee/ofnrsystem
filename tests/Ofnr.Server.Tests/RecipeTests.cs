@@ -43,6 +43,9 @@ public sealed class RecipeTests
             var shell = r.Claude.AllowedTools.Contains("Bash");
             Assert.Equal(r.Lock is not ("sketchup" or "illustrator" or "photoshop") && !shell, r.UntrustedMailInPrompt);
             Assert.Equal(!shell, r.Claude.DisallowedTools.Contains("Bash"));
+            // xlsx and pptx are built only through these MCP servers, never the document skills' scripts, so skill and prompt name them.
+            foreach (var m in r.McpServers.Where(m => m is "excel" or "powerpoint"))
+                Assert.All(r.Skills.Select(s => File.ReadAllText(Path.Combine(Skills, s, "SKILL.md"))).Append(r.Prompt), text => Assert.Contains($"mcp__{m}__*", text));
             if (shell) Assert.All(r.Skills, s => Assert.DoesNotContain("get_mail_thread", File.ReadAllText(Path.Combine(Skills, s, "SKILL.md"))));
             Assert.DoesNotContain(r.Name + r.Prompt, c => c is '\u2013' or '\u2014');
         }
@@ -50,6 +53,8 @@ public sealed class RecipeTests
         // .docx has no MCP server: these write it with the Anthropic docx skill's scripts.
         Assert.Equal(["contract", "document", "ops-manual", "report"], catalog.All.Where(r => r.Claude.AllowedTools.Contains("Bash")).Select(r => r.Id).Order());
         Assert.Equal(["excel"], catalog.Get("quote")!.McpServers);
+        Assert.Equal(["powerpoint"], catalog.Get("proposal")!.McpServers);
+        Assert.Equal(["powerpoint"], catalog.Get("report")!.McpServers);
         Assert.Equal(["sketchup"], catalog.Get("model3d")!.McpServers);
         Assert.Equal(["Read", "Write", "Edit", "Glob", "Grep", "Skill", "TodoWrite", "mcp__ofnr__*"], catalog.Get("brief")!.Claude.AllowedTools);
         Assert.Empty(catalog.Get("free")!.Skills);
