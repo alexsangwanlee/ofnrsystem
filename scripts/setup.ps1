@@ -24,8 +24,8 @@ function Warn($text) { Write-Host "  [주의] $text" -ForegroundColor Yellow; $t
 
 function Has($name) { [bool](Get-Command $name -ErrorAction SilentlyContinue) }
 
-# An .exe first: for an npm install, Get-Command returns the .ps1 shim, which the server cannot start.
-function Exe($name) { (Get-Command "$name.exe", $name -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1).Source }
+# Only an .exe: the server refuses npm's .cmd and .ps1 shims.
+function Exe($name) { (Get-Command "$name.exe" -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1).Source }
 
 # Claude Code's installer puts claude.exe in ~\.local\bin, which may not be on PATH yet.
 function Update-Path {
@@ -76,7 +76,8 @@ function Save-Secret($name, $value) {
 function Read-Secret($name) {
   $path = Join-Path (Join-Path $DataRoot 'secrets') "$name.bin"
   if (-not (Test-Path $path)) { return $null }
-  $utf8.GetString([Security.Cryptography.ProtectedData]::Unprotect([IO.File]::ReadAllBytes($path), $null, 'CurrentUser'))
+  # Another Windows account or PC wrote it: treat as missing, like SecretStore.Load.
+  try { $utf8.GetString([Security.Cryptography.ProtectedData]::Unprotect([IO.File]::ReadAllBytes($path), $null, 'CurrentUser')) } catch { $null }
 }
 
 # SQL on stdin, not argv: other processes can read a command line, and one statement carries a password.
@@ -101,6 +102,8 @@ Ok "데이터 폴더 $DataRoot"
 # 2. Programs
 Say ''
 Say '[1/4] 프로그램 점검'
+# A rerun then finds what an earlier run installed, in ~\.local\bin too.
+Update-Path
 Ensure 'Git' 'git' 'Git.Git' $null
 Ensure 'Node.js' 'node' 'OpenJS.NodeJS.LTS' $null
 # 'py', not 'python': on a PC without Python, python.exe is the Microsoft Store shortcut.
@@ -109,8 +112,13 @@ Ensure 'uv' 'uvx' 'astral-sh.uv' $null
 # The Excel and PowerPoint MCP servers are .NET tools, which need the SDK, not only a runtime.
 if (-not ((Has 'dotnet') -and (& dotnet --list-sdks | Where-Object { $_ -match '^10\.' }))) { [void](Install-Winget 'Microsoft.DotNet.SDK.10' @()) }
 Ensure '.NET SDK' 'dotnet' $null $null
-Ensure 'Claude Code' 'claude' $null 'https://claude.ai/install.ps1'
-Ensure 'Codex' 'codex' $null 'https://chatgpt.com/codex/install.ps1'
+# The .exe names: an npm install leaves only shims on PATH, so it gets the native install the server can start.
+Ensure 'Claude Code' 'claude.exe' $null 'https://claude.ai/install.ps1'
+# Claude Code's installer only prints a note when its folder is not on PATH; the CEO's first claude /login needs it.
+$bin = Join-Path $env:USERPROFILE '.local\bin'
+$userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+if (($userPath -split ';') -notcontains $bin) { [Environment]::SetEnvironmentVariable('Path', "$userPath;$bin".TrimStart(';'), 'User') }
+Ensure 'Codex' 'codex.exe' $null 'https://chatgpt.com/codex/install.ps1'
 
 # 3. PostgreSQL 17 (not 18: the phase 2 shared server runs 17, and pg_dump cannot dump a newer server)
 Say ''
@@ -119,7 +127,13 @@ if (-not (Test-Path (Join-Path $pgBin 'psql.exe'))) {
   $super = New-Password
   Save-Secret 'postgres' $super
   Say '  PostgreSQL 17 설치 중... (관리자 권한 확인 창이 뜨면 예를 눌러 주세요)'
-  [void](Install-Winget 'PostgreSQL.PostgreSQL.17' @('--override', "--mode unattended --unattendedmodeui none --superpassword $super --serverport 5432 --disable-components pgAdmin,stackbuilder"))
+  # An option file, not --superpassword: winget's command line and its log would carry the password.
+  # shortcut: the path goes unquoted, so a $DataRoot with a space breaks it; quote it when one is needed.
+  $optionFile = Join-Path $DataRoot 'tmp\pg-install.txt'
+  try {
+    [IO.File]::WriteAllText($optionFile, "superpassword=$super`n", $utf8)
+    [void](Install-Winget 'PostgreSQL.PostgreSQL.17' @('--override', "--mode unattended --unattendedmodeui none --optionfile $optionFile --serverport 5432 --disable-components pgAdmin,stackbuilder"))
+  } finally { Remove-Item $optionFile -ErrorAction SilentlyContinue }
 }
 
 # U&'' keeps the Korean probe word out of the console code page.
@@ -185,9 +199,10 @@ if (Has 'dotnet') {
 
 # Anthropic document skills (docx, pdf, pptx, xlsx) for Claude jobs: installed as a user-scope plugin, never copied (their license forbids copies).
 # Both commands are safe to rerun: they report "already" and exit 0.
+# No 2>&1: under 'Stop', Windows PowerShell ends the script on a redirected stderr line, before the warning below.
 if ($claude = Exe 'claude') {
-  & $claude plugin marketplace add anthropics/skills 2>&1 | Out-Host
-  & $claude plugin install document-skills@anthropic-agent-skills 2>&1 | Out-Host
+  & $claude plugin marketplace add anthropics/skills | Out-Host
+  & $claude plugin install document-skills@anthropic-agent-skills | Out-Host
   if ($LASTEXITCODE -eq 0) { Ok 'Claude 문서 스킬 (docx, pdf, pptx, xlsx)' }
   else { Warn 'Claude 문서 스킬 설치에 실패했습니다. PowerShell에서 claude plugin install document-skills@anthropic-agent-skills 를 실행해 주세요.' }
 }
