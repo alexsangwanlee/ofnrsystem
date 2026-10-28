@@ -379,7 +379,7 @@ SignalR hub `/hubs/ops`, server-to-client methods: `jobUpdated(JobDto)`, `jobEve
   - **스킬**: list with description and learned-rule count; detail with markdown editor (plain textarea, monospace), 저장, 변경 이력 list with 되돌리기.
   - **설정**: forms for paths, default engine, concurrency, mail account (address, password field write-only, 연결 확인), auto triage toggle, Sent copy toggle; health checks list with ok/error states.
 - Every list has an empty state (Korean sentence + one action), a skeleton while loading, and an inline error with 다시 시도.
-- `NewJobDialog`: recipe select filtered by stage, engine radio (only engines the recipe allows; default from settings), instruction textarea (label 지시 내용), linked mail shown when started from mail.
+- `NewJobDialog`: recipe select with the stage's recipes first (every recipe stays offered, so mail at any stage gets 회신 초안), engine radio (only engines the recipe allows; default from settings), instruction textarea (label 지시 내용), linked mail shown when started from mail.
 
 - [ ] **Step 1: Write failing tests** (vitest + Testing Library, `fetch` mocked): `Today_shows_attention_cards_and_counts`; `Approval_accept_posts_decision`; `Mail_send_requires_confirmation`; `Board_renders_seven_columns_in_order`; `JobLog_appends_events_and_collapses_tools`; `NewJobDialog_hides_codex_for_claude_only_recipe`; `No_em_dash_in_source` (scan `web/src/**` for U+2014 and U+2013).
 - [ ] **Step 2: Run** `npm --prefix web test`. Expected: FAIL.

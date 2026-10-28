@@ -35,7 +35,7 @@ const useStyles = makeStyles({
   },
 });
 
-/** Slide-over that starts a job: recipe (filtered by stage), engine allowed by the recipe, instruction. */
+/** Slide-over that starts a job: recipe (the stage's recipes first), engine allowed by the recipe, instruction. */
 export function NewJobDialog({
   open,
   onClose,
@@ -74,11 +74,10 @@ export function NewJobDialog({
   }
 
   // skill-learning writes the company skills, so it starts only from 검토 의견, never with mail text attached.
-  const options = (recipes.data ?? []).filter(
-    (r) =>
-      r.id !== "skill-learning" &&
-      (r.id === recipeId || ((!stage || !r.stage || r.stage === stage) && (projectId || !r.needsProject))),
-  );
+  // The stage only orders the list: client mail and Production projects need recipes of other stages too.
+  const options = (recipes.data ?? [])
+    .filter((r) => r.id !== "skill-learning" && (r.id === recipeId || projectId || !r.needsProject))
+    .sort((a, b) => Number(b.stage === stage) - Number(a.stage === stage));
   const recipe = options.find((r) => r.id === (picked ?? recipeId)) ?? options[0];
   const engines = recipe?.engines ?? [];
   const preferred = settings.data?.defaultEngine;
