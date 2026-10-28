@@ -18,8 +18,13 @@ public static class EngineInvocation
     // Recipes that keep mail out of the prompt (Recipe.UntrustedMailInPrompt) must not fetch it through this tool either.
     const string MailTool = "get_mail_thread";
 
-    // Runs arbitrary Ruby with file, network and shell access, and the 3D job reads client files (00_IN attachments, BRIEF).
-    const string SketchupEval = "mcp__sketchup__eval_ruby";
+    // External tools that run code (Ruby, VBA, Python) or reach local files and the network (Power Query, data connections).
+    // Recipes that read mail never get them; the 3D job (no mail) needs eval_ruby to save its model and renders.
+    static readonly (string Server, string Tool)[] CodeTools =
+        [("sketchup", "eval_ruby"), ("excel", "vba"), ("excel", "pythoninexcel"), ("excel", "powerquery"), ("excel", "connection")];
+
+    static string[] BlockedCodeTools(Recipe r, string server) =>
+        r.UntrustedMailInPrompt ? [.. CodeTools.Where(t => t.Server == server).Select(t => t.Tool)] : [];
 
     const int McpTimeoutSec = 1800;
 
@@ -52,8 +57,9 @@ public static class EngineInvocation
             var allowed = r.Claude.AllowedTools.SelectMany(t => t is "Write" or "Edit" ? scopes.Select(s => $"Edit({s})") : [t]).Distinct();
             args.AddRange(["--plugin-dir", o.PluginDir, "--mcp-config", mcpPath, "--strict-mcp-config", "--permission-mode", r.Claude.PermissionMode,
                 "--allowedTools", string.Join(",", allowed.Concat(r.McpServers.Select(s => $"mcp__{s}__*")))]);
-            string[] disallowed = r.UntrustedMailInPrompt ? r.Claude.DisallowedTools : [.. r.Claude.DisallowedTools, "mcp__ofnr__" + MailTool];
-            if (r.McpServers.Contains("sketchup")) disallowed = [.. disallowed, SketchupEval];
+            string[] disallowed = r.UntrustedMailInPrompt
+                ? [.. r.Claude.DisallowedTools, .. r.McpServers.SelectMany(s => BlockedCodeTools(r, s).Select(t => $"mcp__{s}__{t}"))]
+                : [.. r.Claude.DisallowedTools, "mcp__ofnr__" + MailTool];
             if (disallowed.Length > 0) args.AddRange(["--disallowedTools", string.Join(",", disallowed)]);
             args.AddRange(["--append-system-prompt", system]);
             if (writable is not null) args.AddRange(["--add-dir", writable]);
@@ -94,6 +100,7 @@ public static class EngineInvocation
             if (server["args"] is JsonArray a) C($"mcp_servers.{name}.args", a.Select(x => (string)x!).ToArray());
             if (server["env"] is JsonObject e) foreach (var (k, v) in e) C($"mcp_servers.{name}.env.{k}", (string)v!);
             Common(name);
+            if (BlockedCodeTools(r, name) is { Length: > 0 } blocked) C($"mcp_servers.{name}.disabled_tools", blocked);
         }
         if (writable is not null) args.AddRange(["--add-dir", writable]);
         if (o.CodexModel is { Length: > 0 } codexModel) args.AddRange(["-m", codexModel]);

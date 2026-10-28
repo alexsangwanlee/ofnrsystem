@@ -82,7 +82,7 @@ AI는 메일을 보내지 않습니다. 메일 발송은 언제나 대표가 보
    양식이 없으면 AI가 기본 구성으로 만들고 결과에 "회사 양식 없음"을 표시합니다.
 6. **상태 점검**: 설정 > 상태 점검에서 모든 항목에 확인 표시가 있는지 봅니다. AI 엔진 줄의 **엔진 점검**을 한 번씩 눌러 실제 작업이 도는지 확인합니다.
 7. **자동 실행**: 설정 > 앱에서 "Windows에 로그인하면 자동으로 실행"을 켭니다.
-8. **스케치업** (3D 작업을 할 때): `mcp_for_sketchup_v0.4.0-signed.rbz`를 https://github.com/zinin/sketchup-mcp2/releases 에서 받아 스케치업 확장 관리자에서 설치합니다. 3D 작업 전에 Plugins > MCP Server > Start Server를 누릅니다. 대시보드는 임의 Ruby 실행 도구(eval_ruby)를 막아 두지만, Plugins > MCP Server > Settings...에서 Enable Ruby evaluation도 꺼 두면 더 안전합니다.
+8. **스케치업** (3D 작업을 할 때): `mcp_for_sketchup_v0.4.0-signed.rbz`를 https://github.com/zinin/sketchup-mcp2/releases 에서 받아 스케치업 확장 관리자에서 설치합니다. 3D 작업 전에 Plugins > MCP Server > Start Server를 누릅니다. 3D 작업은 모델과 장면 이미지를 저장할 때 Ruby 실행 도구(eval_ruby)를 쓰므로 Plugins > MCP Server > Settings...의 Enable Ruby evaluation을 켜 둡니다. 메일을 읽는 작업에는 대시보드가 이 도구를 주지 않습니다.
 9. **일러스트레이터** (그래픽 작업을 할 때): 작업 전에 일러스트레이터를 열어 둡니다.
 
 ## 매일 쓰기

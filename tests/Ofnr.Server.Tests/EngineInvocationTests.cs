@@ -64,7 +64,7 @@ public sealed class EngineInvocationTests : IDisposable
         Assert.Equal(
             ["--plugin-dir", o.PluginDir, "--mcp-config", mcpPath, "--strict-mcp-config", "--permission-mode", "dontAsk",
              "--allowedTools", $"Read,Edit(/{Folder}/**),Edit(/{plan.WorkDir}/**),Glob,Grep,Skill,TodoWrite,mcp__ofnr__*,mcp__excel__*",
-             "--disallowedTools", "Bash",
+             "--disallowedTools", "Bash,mcp__excel__vba,mcp__excel__pythoninexcel,mcp__excel__powerquery,mcp__excel__connection",
              "--append-system-prompt", "시스템 지시", "--add-dir", Folder, "--model", "opus"],
             plan.ExtraArgs);
 
@@ -114,6 +114,8 @@ public sealed class EngineInvocationTests : IDisposable
 
         Assert.Contains("mcp_servers.excel.command=\"C:\\\\OFNR\\\\x\"", c);
         Assert.Contains("mcp_servers.excel.env.TEMP=\"C:\\\\OFNR\\\\tmp\"", c);
+        // quote reads mail, so the Excel tools that run macros or Python or reach files and the network stay off.
+        Assert.Contains("mcp_servers.excel.disabled_tools=[\"vba\",\"pythoninexcel\",\"powerquery\",\"connection\"]", c);
         Assert.Equal(["--stdio", "한글"], JsonSerializer.Deserialize<string[]>(c.Single(v => v.StartsWith("mcp_servers.excel.args="))["mcp_servers.excel.args=".Length..])!);
         Assert.Equal(system.Replace("😀", ""), JsonSerializer.Deserialize<string>(c.Single(v => v.StartsWith("developer_instructions="))["developer_instructions=".Length..]));
         Assert.DoesNotContain(c, v => Regex.IsMatch(v, @"\\uD[89A-F]", RegexOptions.IgnoreCase)); // a surrogate escape is not valid TOML
@@ -137,7 +139,7 @@ public sealed class EngineInvocationTests : IDisposable
     }
 
     [Theory]
-    [InlineData("model3d", "Bash,mcp__ofnr__get_mail_thread,mcp__sketchup__eval_ruby")]
+    [InlineData("model3d", "Bash,mcp__ofnr__get_mail_thread")]
     [InlineData("graphic", "Bash,mcp__ofnr__get_mail_thread")]
     [InlineData("document", "mcp__ofnr__get_mail_thread")]
     public void Script_recipes_cannot_read_mail_through_the_dashboard(string recipe, string denied)
