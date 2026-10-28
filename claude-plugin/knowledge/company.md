@@ -94,4 +94,7 @@
 - KAST x Pudgy Penguins KBW 2026 (파티 라운지)
 - 외모지상주의 Ep.인천 [선 : 죽음으로 가는 길] (팝업스토어)
 - W concept W stage_mirror OOH (BTL, 2주, 동대문/성수/압구정/이태원 OOH)
+- (주)하이어코퍼레이션 HILO WAVE BUSAN 2026 (BTL, 부산 1일, 인플루언서 초청 설명회와 질의응답)
+- 노스페이스 키즈 댄스 클래스 (BTL, 성수동 코사이어티 성수 1일, 범접 멤버가 강사인 원데이 클래스)
+- 마이프로틴 My protein bar (팝업스토어, 홍대 3일, 프로틴 값을 운동으로 치르는 주문 방식, 앰버서더 팬 밋업)
 - 함께한 브랜드 로고: The North Face, W Concept, The Grimm, Myprotein, Hilo Wave

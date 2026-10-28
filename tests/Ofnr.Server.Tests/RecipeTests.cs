@@ -61,6 +61,14 @@ public sealed class RecipeTests
         Assert.Null(catalog.Get("nope"));
     }
 
+    [Fact]
+    public void Skills_name_files_the_dashboard_registers()
+    {
+        // ProjectFolders only parses <JobNo>_<DOCCODE>_v<NN>.<ext>: a suffix such as _S10 or _<scene> never becomes a draft.
+        Assert.All(Directory.EnumerateFiles(Skills, "SKILL.md", SearchOption.AllDirectories),
+            f => Assert.DoesNotMatch(@"_v\{NN\}[^.`]", File.ReadAllText(f)));
+    }
+
     [Theory]
     [InlineData("""[{ "id": "quote", "name": "견적서", "claude": { "allowedTools": ["Read", "Bash"], "disallowedTools": [] } }]""", false)]
     [InlineData("""[{ "id": "quote", "name": "견적서", "claude": { "allowedTools": ["Bash(python:*)"] } }]""", false)]
