@@ -21,9 +21,14 @@ const useStyles = makeStyles({
 });
 
 export function JobDetail() {
+  const { id } = useParams();
+  // Keyed, so a typed note, the chosen skill or an open 후속 지시 never carries over to the next job (학습 작업 link, back).
+  return <JobView key={id} id={id!} />;
+}
+
+function JobView({ id }: { id: string }) {
   const s = useStyles();
   const ui = useUi();
-  const { id } = useParams();
   const detail = useApi<JobDetailDto>(`/api/jobs/${id}`);
   const projectId = detail.data?.job.projectId;
   const project = useApi<ProjectDetailDto>(projectId ? `/api/projects/${projectId}` : null);

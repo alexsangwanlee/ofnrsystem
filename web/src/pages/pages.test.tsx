@@ -401,6 +401,30 @@ describe("pages", () => {
     expect(calls).toContainEqual({ method: "POST", path: "/api/approvals/a1/decide", body: { decision: "respond", text: "없습니다" } });
   });
 
+  it("JobDetail_starts_empty_when_the_learning_job_link_opens_another_job", async () => {
+    const base: JobDetailDto = { job: job({ status: "Review" }), runs: [], events: [], approvals: [], artifacts: [], feedback: [], result: null };
+    mockApi({
+      "GET /api/jobs/j1": {
+        ...base,
+        feedback: [{ id: "f1", jobId: "j1", text: "단가 확인", skillName: "quote", learningJobId: "j2", createdAt: "2026-10-27T02:00:00Z" }],
+      },
+      "GET /api/jobs/j2": { ...base, job: job({ id: "j2", recipeId: "skill-learning", recipeName: "스킬 학습", title: "스킬 학습 · quote", status: "Review" }) },
+      "GET /api/projects/p1": { project, mails: [], jobs: [], artifacts: [], activity: [] },
+      "GET /api/recipes": [{ id: "quote", name: "견적서", stage: "Planning", engines: ["claude"], lock: "office", needsProject: true, skills: ["quote"] }],
+    });
+    renderAt(<JobDetail />, "/jobs/j1", "/jobs/:id");
+
+    fireEvent.change(await screen.findByRole("textbox", { name: "검토 의견" }), { target: { value: "다음 작업에 보내면 안 되는 의견" } });
+    fireEvent.change(screen.getByLabelText(/스킬에 반영/), { target: { value: "quote" } });
+    fireEvent.click(screen.getByRole("button", { name: "후속 지시" }));
+    fireEvent.click(screen.getByRole("link", { name: "학습 작업" }));
+
+    await screen.findByRole("heading", { name: "스킬 학습 · quote" });
+    expect((screen.getByRole("textbox", { name: "검토 의견" }) as HTMLTextAreaElement).value).toBe("");
+    expect((screen.getByLabelText(/스킬에 반영/) as HTMLSelectElement).value).toBe("");
+    expect(screen.queryByRole("textbox", { name: "후속 지시" })).toBeNull();
+  });
+
   it("Mail_send_requires_confirmation", async () => {
     const calls = mockApi(mailRoutes);
     renderAt(<Mail />, "/mail/m1", "/mail/:id");
