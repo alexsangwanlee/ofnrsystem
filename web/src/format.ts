@@ -71,6 +71,17 @@ export const JOB_STATUS: Record<JobStatus, string> = {
   Failed: "실패",
 };
 export const MAIL_STATUS: Record<MailStatus, string> = { New: "신규", Linked: "연결", NeedsReply: "답장 필요", Done: "완료" };
+/** The categories of claude-plugin/skills/mail-triage; "other" and unknown values show no badge. */
+export const MAIL_CATEGORY: Record<string, string> = {
+  inquiry: "신규 문의",
+  quote_request: "견적 요청",
+  feedback: "시안 피드백",
+  contract_billing: "계약/정산",
+  vendor: "협력업체",
+  public_bid: "공공 입찰",
+  ops_report: "현장 보고",
+  newsletter_spam: "광고/스팸",
+};
 export const ARTIFACT_STATUS: Record<ArtifactStatus, string> = {
   Draft: "초안",
   InternalApproved: "내부승인",

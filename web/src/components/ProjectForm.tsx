@@ -200,7 +200,7 @@ export function ProjectForm({
           {!editing && (
             <Field
               label="영문 약칭 (선택)"
-              hint="폴더 이름에 쓰입니다. 비워 두면 프로젝트명에서 만듭니다."
+              hint="폴더 이름에 쓰이고 나중에 바꿀 수 없습니다. 비워 두면 프로젝트명의 영문과 숫자만 쓰고, 없으면 P가 됩니다."
               validationMessage={val.message("slug")}
             >
               <Input {...field("slug")} placeholder="TNF-Seongsu" />

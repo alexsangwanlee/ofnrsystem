@@ -26,11 +26,11 @@ import {
 import { ArrowSync20Regular, Attach16Regular, Link20Regular } from "@fluentui/react-icons";
 import { api } from "../api";
 import { EmptyState } from "../components/EmptyState";
-import { joinPath } from "../components/FileList";
+import { joinPath, openPath } from "../components/FileList";
 import { NewJobDialog } from "../components/NewJobDialog";
 import { ProjectForm, type ProjectSeed } from "../components/ProjectForm";
 import { Async, Confirm, ErrorBar, Page, RouterLink, Section, useAction, useApi, useUi, useValidation } from "../components/ui";
-import { MAIL_STATUS, formatDate, formatSize, formatTime } from "../format";
+import { MAIL_CATEGORY, MAIL_STATUS, formatDate, formatSize, formatTime } from "../format";
 import { useOps } from "../realtime";
 import { lightTheme } from "../theme";
 import type { DraftInput, FileDto, MailDetailDto, MailDraftDto, MailSummaryDto, ProjectDto } from "../types";
@@ -339,6 +339,11 @@ export function Mail() {
                             {m.summary ?? ""}
                           </Caption1>
                           {m.hasAttachments && <Attach16Regular aria-label="첨부 있음" />}
+                          {m.category && MAIL_CATEGORY[m.category] && (
+                            <Badge appearance="outline" shape="rounded" size="small" color="informative">
+                              {MAIL_CATEGORY[m.category]}
+                            </Badge>
+                          )}
                           {m.hasDraft && (
                             <Badge appearance="tint" shape="rounded" size="small" color="informative">
                               초안 있음
@@ -396,7 +401,7 @@ function MailReader({
   const [jobOpen, setJobOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const save = useAction();
-  const [saved, setSaved] = useState<string>();
+  const [saved, setSaved] = useState<FileDto>();
 
   const changed = (m: MailSummaryDto) => {
     onChanged(m);
@@ -421,13 +426,26 @@ function MailReader({
         };
         const saveAttachment = (index: number) =>
           void save.run(async () => {
-            const f = await api<FileDto>(`/api/mail/${m.id}/attachments/${index}/save`, { method: "POST" });
-            setSaved(`프로젝트 폴더에 저장했습니다: ${f.relativePath}`);
+            setSaved(await api<FileDto>(`/api/mail/${m.id}/attachments/${index}/save`, { method: "POST" }));
           });
 
         return (
           <div className={s.detail}>
             <article className={s.reader} aria-label="메일 본문">
+              {/* Above the subject, so a stacked layout (under 1280px) shows them without scrolling. */}
+              <div className={ui.actions}>
+                <LinkProjectMenu mail={m} onLinked={changed} />
+                <Button size="small" onClick={() => setCreateOpen(true)}>
+                  새 프로젝트 만들기
+                </Button>
+                <Button size="small" appearance="primary" onClick={() => setReplying(true)}>
+                  답장 쓰기
+                </Button>
+                <Button size="small" onClick={() => setJobOpen(true)}>
+                  작업 맡기기
+                </Button>
+                <MailDoneButton mail={m} onChanged={changed} />
+              </div>
               <div>
                 <Subtitle1 as="h2">{m.subject}</Subtitle1>
                 <dl className={ui.dl} style={{ marginTop: tokens.spacingVerticalS }}>
@@ -465,7 +483,16 @@ function MailReader({
                   ))}
                 </div>
               )}
-              {saved && <Caption1 aria-live="polite">{saved}</Caption1>}
+              {saved && (
+                <div className={ui.actions}>
+                  <Caption1 aria-live="polite">프로젝트 폴더에 저장했습니다: {saved.relativePath}</Caption1>
+                  {project && (
+                    <Button size="small" disabled={save.busy} onClick={() => void save.run(() => openPath(joinPath(project.folderPath, saved.relativePath)))}>
+                      열기
+                    </Button>
+                  )}
+                </div>
+              )}
               {save.error && <ErrorBar message={save.error} />}
               {m.htmlBody ? (
                 // The sandbox blocks scripts, forms and navigation from the mail HTML; its links (target=_blank) open in the browser.
@@ -506,19 +533,6 @@ function MailReader({
               )}
             </article>
             <aside className={s.side} aria-label="AI 정리">
-              <div className={ui.actions}>
-                <LinkProjectMenu mail={m} onLinked={changed} />
-                <Button size="small" onClick={() => setCreateOpen(true)}>
-                  새 프로젝트 만들기
-                </Button>
-                <Button size="small" appearance="primary" onClick={() => setReplying(true)}>
-                  답장 쓰기
-                </Button>
-                <Button size="small" onClick={() => setJobOpen(true)}>
-                  작업 맡기기
-                </Button>
-                <MailDoneButton mail={m} onChanged={changed} />
-              </div>
               <Section title="요약">
                 <Body1>{m.summary ?? "아직 AI가 정리하지 않은 메일입니다."}</Body1>
               </Section>

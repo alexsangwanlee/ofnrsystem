@@ -605,6 +605,22 @@ describe("pages", () => {
     expect(sandbox).toEqual(["allow-popups", "allow-popups-to-escape-sandbox"]);
   });
 
+  it("Mail_list_shows_the_triage_category_and_a_saved_attachment_opens", async () => {
+    const calls = mockApi({
+      ...mailRoutes,
+      "GET /api/mail": [{ ...mail, category: "newsletter_spam" }],
+      "GET /api/mail/m1": { ...mailDetail, attachments: [{ index: 0, fileName: "도면.pdf", size: 2048 }] },
+      "POST /api/mail/m1/attachments/0/save": { relativePath: "00_IN/도면.pdf", size: 2048, modifiedAt: "2026-10-27T01:00:00Z" },
+      "POST /api/open": {},
+    });
+    renderAt(<Mail />, "/mail/m1", "/mail/:id");
+    expect(await within(await screen.findByRole("list", { name: "메일 목록" })).findByText("광고/스팸")).toBeTruthy();
+
+    fireEvent.click(await screen.findByRole("button", { name: /도면\.pdf/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "열기" }));
+    await waitFor(() => expect(calls).toContainEqual({ method: "POST", path: "/api/open", body: { path: `${project.folderPath}/00_IN/도면.pdf` } }));
+  });
+
   it("Mail_done_closes_the_mail_from_the_reader_and_from_today", async () => {
     const unlinked = { ...mail, projectId: null, jobNo: null, status: "New" as const };
     const closed = { ...unlinked, status: "Done" as const };
