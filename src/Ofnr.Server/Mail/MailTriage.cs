@@ -41,7 +41,7 @@ public sealed partial class MailTriage(IServiceScopeFactory scopes, SettingsStor
 
     readonly Channel<IReadOnlyList<Guid>> queue = Channel.CreateUnbounded<IReadOnlyList<Guid>>();
 
-    /// <summary><see cref="FailedMessage"/> after a run that failed, null after one that worked.</summary>
+    /// <summary><see cref="FailedMessage"/> and why, after a run that failed; null after one that worked.</summary>
     public string? Failure { get; private set; }
 
     /// <summary>How long one engine run may take. The queue has one consumer, so a stuck CLI would stop all later triage.</summary>
@@ -79,7 +79,7 @@ public sealed partial class MailTriage(IServiceScopeFactory scopes, SettingsStor
             {
                 // A database error must not end the loop; later mail still gets triaged.
                 logger.LogWarning(e, "Mail triage failed");
-                Failure = FailedMessage;
+                Failure = $"{FailedMessage}: {Reason(e)}";
             }
         }
     }
@@ -98,7 +98,7 @@ public sealed partial class MailTriage(IServiceScopeFactory scopes, SettingsStor
             .Select(p => new { p.Id, p.JobNo, p.Name, Client = p.Client != null ? p.Client.Name : null, Domains = p.Client != null ? p.Client.MailDomains : null })
             .ToListAsync(ct);
         var matchable = active.Select(p => (p.Id, p.JobNo, p.Domains ?? [])).ToList();
-        var failed = false;
+        string? failed = null;
         foreach (var batch in mailIds.Chunk(BatchSize))
         {
             var mails = await db.MailMessages.AsNoTracking().Where(m => batch.Contains(m.Id)).ToListAsync(ct);
@@ -130,7 +130,7 @@ public sealed partial class MailTriage(IServiceScopeFactory scopes, SettingsStor
             catch (Exception e) when (!ct.IsCancellationRequested)
             {
                 logger.LogWarning(e, "Mail triage failed");
-                failed = true;
+                failed = Reason(e);
                 continue;
             }
 
@@ -155,8 +155,16 @@ public sealed partial class MailTriage(IServiceScopeFactory scopes, SettingsStor
             await db.SaveChangesAsync(ct);
             foreach (var dto in await db.MailMessages.Where(m => changed.Contains(m.Id)).ToSummaries().ToListAsync(ct)) await notifier.MailUpdated(dto);
         }
-        Failure = failed ? FailedMessage : null;
+        Failure = failed is null ? null : $"{FailedMessage}: {failed}";
     }
+
+    // The installed app keeps no log file, so Health is the only place the CEO or a developer sees why.
+    static string Reason(Exception e) => e switch
+    {
+        OperationCanceledException => "제한 시간을 넘겼습니다.",
+        JsonException => "엔진의 답이 정해진 형식이 아닙니다.",
+        _ => e.Message.Split('\n')[0].Trim(),
+    };
 
     static string SkillBody(string text) => text[Frontmatter().Match(text).Length..].Trim();
 

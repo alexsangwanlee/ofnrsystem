@@ -179,12 +179,12 @@ public sealed class MailTriageTests
 
         var m = await rig.Mail(mail);
         Assert.Equal((null, null, MailStatus.New), (m.Category, m.Summary, m.Status));
-        Assert.Equal("메일 분류에 실패했습니다", rig.Triage.Failure);
+        Assert.Equal("메일 분류에 실패했습니다: Claude 실행 오류: Not logged in", rig.Triage.Failure);
 
         // An answer that is not the schema fails the same way; the next good run clears the failure.
         rig.Agents.Script = (_, _) => Reply("분류할 수 없습니다");
         await rig.Triage.TriageAsync([mail], Ct);
-        Assert.Equal("메일 분류에 실패했습니다", rig.Triage.Failure);
+        Assert.Equal("메일 분류에 실패했습니다: 엔진의 답이 정해진 형식이 아닙니다.", rig.Triage.Failure);
         rig.Answer(Item(mail));
         await rig.Triage.TriageAsync([mail], Ct);
         Assert.Null(rig.Triage.Failure);
@@ -233,7 +233,7 @@ public sealed class MailTriageTests
 
         Assert.True(Assert.Single(rig.Agents.Calls).Canceled);
         Assert.Null((await rig.Mail(mail)).Category);
-        Assert.Equal("메일 분류에 실패했습니다", rig.Triage.Failure);
+        Assert.Equal("메일 분류에 실패했습니다: 제한 시간을 넘겼습니다.", rig.Triage.Failure);
     }
 
     [Fact]
